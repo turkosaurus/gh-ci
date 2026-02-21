@@ -81,7 +81,8 @@ type Model struct {
 	// state
 	loading       bool
 	message       string
-	defaultBranch string
+	defaultBranch string // from config; repo primary branch (e.g. "main")
+	localBranch   string // current git checkout; used for local def scoping and local-only dispatch
 
 	// rerun confirmation
 	confirming  bool
@@ -172,7 +173,8 @@ func NewModel(cfg *config.Config) Model {
 		loading:       true,
 		localDefs:     scanLocalWorkflows(),
 		workflowFiles: make(map[string]string),
-		defaultBranch: currentGitBranch(),
+		defaultBranch: cfg.DefaultBranch,
+		localBranch:   currentGitBranch(),
 	}
 }
 
@@ -253,27 +255,6 @@ func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
 	}
 }
 
-// primaryBranchForWorkflow returns the branch with the most runs in the same repo
-// as the given workflow. The primary branch (main/master) always accumulates the
-// most runs from push, PR, and manual triggers, so it's the right dispatch ref.
-func (m Model) primaryBranchForWorkflow(name string) string {
-	repo := m.repoForWorkflow(name)
-	counts := map[string]int{}
-	for _, r := range m.allRuns {
-		if r.Repository.FullName == repo {
-			counts[r.HeadBranch]++
-		}
-	}
-	best := m.defaultBranch
-	bestCount := -1
-	for branch, count := range counts {
-		if count > bestCount {
-			bestCount = count
-			best = branch
-		}
-	}
-	return best
-}
 
 func (m Model) repoForWorkflow(name string) string {
 	for _, r := range m.allRuns {
@@ -363,7 +344,7 @@ func (m *Model) applyFilter() {
 	if m.branchIdx < len(m.availableBranches) {
 		selectedBranch = m.availableBranches[m.branchIdx]
 	}
-	if selectedBranch == m.defaultBranch && m.defaultBranch != "" {
+	if selectedBranch == m.localBranch && m.localBranch != "" {
 		hasRunsAnywhere := map[string]bool{}
 		for _, r := range m.allRuns {
 			hasRunsAnywhere[r.Name] = true
@@ -473,25 +454,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = "error: " + msg.err.Error()
 		} else {
 			m.allRuns = msg.runs
-			// Preserve selected branch by name; on first load default to current git branch
+			// Preserve selected branch by name; on first load start on local checkout
 			prevBranch := ""
 			if m.availableBranches == nil {
-				prevBranch = m.defaultBranch
+				prevBranch = m.localBranch
 			} else if m.branchIdx < len(m.availableBranches) {
 				prevBranch = m.availableBranches[m.branchIdx]
 			}
 			m.workflows, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
-			// ensure defaultBranch is always present (it may have no runs yet)
-			if m.defaultBranch != "" {
+			// ensure both the configured primary branch and the local checkout are
+			// always present, even when they have no runs yet
+			for _, branch := range []string{m.defaultBranch, m.localBranch} {
+				if branch == "" {
+					continue
+				}
 				found := false
 				for _, b := range m.availableBranches {
-					if b == m.defaultBranch {
+					if b == branch {
 						found = true
 						break
 					}
 				}
 				if !found {
-					m.availableBranches = append(m.availableBranches, m.defaultBranch)
+					m.availableBranches = append(m.availableBranches, branch)
 					sort.Strings(m.availableBranches)
 				}
 			}
@@ -876,7 +861,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
 					m.dispatchFile = file
-					m.dispatchRef = m.primaryBranchForWorkflow(wfName)
+					m.dispatchRef = m.selectedBranch()
 					m.dispatchRepo = m.repoForWorkflow(wfName)
 				}
 			}

@@ -13,6 +13,7 @@ import (
 type Config struct {
 	Repos           []string `yaml:"repos"`
 	RefreshInterval int      `yaml:"refresh_interval"` // seconds
+	DefaultBranch   string   `yaml:"default_branch"`   // repo primary branch for dispatch; default "main"
 }
 
 // DefaultConfig returns the default configuration
@@ -20,6 +21,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Repos:           []string{},
 		RefreshInterval: 30,
+		DefaultBranch:   "main",
 	}
 }
 
@@ -32,6 +34,9 @@ func Load() (*Config, error) {
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
+		}
+		if cfg.DefaultBranch == "" {
+			cfg.DefaultBranch = "main"
 		}
 		if len(cfg.Repos) > 0 {
 			return cfg, nil
