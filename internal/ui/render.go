@@ -64,22 +64,29 @@ func renderTitle(m Model, width int) string {
 func renderPanelHeaders(m Model, workflowW, runsW, detailW int) string {
 	sep := lipgloss.NewStyle().Background(styles.ColorBgLight).Foreground(styles.ColorSubtle).Render("│")
 	label := func(panel int, text string, w int) string {
+		style := lipgloss.NewStyle().
+			Width(w).
+			Align(lipgloss.Center) // Center the label text
 		if m.activePanel == panel {
-			return lipgloss.NewStyle().Width(w).Bold(true).
-				Background(styles.ColorPurple).Foreground(styles.ColorBg).
-				Render(text)
+			style = style.Bold(true).
+				Background(styles.ColorPurple).Foreground(styles.ColorBg)
+		} else {
+			style = style.Background(styles.ColorBgLight).Foreground(styles.ColorWhite)
 		}
-		return lipgloss.NewStyle().Width(w).
-			Background(styles.ColorBgLight).Foreground(styles.ColorWhite).
-			Render(text)
+		return style.Render(text)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		label(0, "WORKFLOW", workflowW),
-		sep,
-		label(1, "RUNS", runsW),
-		sep,
-		label(2, "DETAIL", detailW),
-	)
+	return lipgloss.NewStyle().
+		Width(workflowW + runsW + detailW + 2). // 2 for separators
+		Align(lipgloss.Center).
+		Render(
+			lipgloss.JoinHorizontal(lipgloss.Top,
+				label(0, "WORKFLOWS", workflowW),
+				sep,
+				label(1, "RUNS", runsW),
+				sep,
+				label(2, "DETAIL", detailW),
+			),
+		)
 }
 
 func renderWorkflows(m Model, width, height int) string {
@@ -222,8 +229,8 @@ func renderList(m Model, width, height int) string {
 	}
 	header := fmt.Sprintf("%-*s  %-*s  %-*s  %*s  %-*s  %-*s",
 		colDispatched, "DISPATCHED",
-		colWorkflow, "NAME",
 		colFile, "FILE",
+		colWorkflow, "NAME",
 		colNum, "RUN",
 		colDur, "TIME",
 		colOk, "OK",
@@ -251,25 +258,25 @@ func renderList(m Model, width, height int) string {
 }
 
 func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, colWorkflow, colFile, colNum, colDur, colDispatched, colOk int) string {
-	icon  := styles.StatusIcon(run.Status, run.Conclusion)
+	icon := styles.StatusIcon(run.Status, run.Conclusion)
 	iconS := fmt.Sprintf("%-*s", colOk, icon)
-	wfS   := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
+	wfS := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
 	fileS := fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile))
-	numS  := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
-	durS  := fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds())))
+	numS := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
+	durS := fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds())))
 	dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006-01-02 15:04"))
 
 	if selected && active {
 		// Per-element styles with shared background so status/duration colors are preserved.
-		bg   := lipgloss.NewStyle().Background(styles.ColorBgLight)
-		sep  := bg.Render("  ")
+		bg := lipgloss.NewStyle().Background(styles.ColorBgLight)
+		sep := bg.Render("  ")
 		disp := m.styles.Dimmed.Background(styles.ColorBgLight).Render(dispS)
-		wf   := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(wfS)
+		wf := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(wfS)
 		file := m.styles.Dimmed.Background(styles.ColorBgLight).Render(fileS)
-		num  := lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(numS)
-		dur  := m.styles.Duration.Background(styles.ColorBgLight).Render(durS)
-		st   := m.styles.StatusStyle(run.Status, run.Conclusion).Background(styles.ColorBgLight).Render(iconS)
-		row  := disp + sep + wf + sep + file + sep + num + sep + dur + sep + st
+		num := lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(numS)
+		dur := m.styles.Duration.Background(styles.ColorBgLight).Render(durS)
+		st := m.styles.StatusStyle(run.Status, run.Conclusion).Background(styles.ColorBgLight).Render(iconS)
+		row := disp + sep + file + sep + wf + sep + num + sep + dur + sep + st
 		// pad remaining width with background so the bar extends to the edge
 		used := colDispatched + 2 + colWorkflow + 2 + colFile + 2 + colNum + 2 + colDur + 2 + colOk
 		if pad := width - used; pad > 0 {
@@ -279,16 +286,16 @@ func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, 
 	}
 
 	if selected {
-		plainRow := dispS + "  " + wfS + "  " + fileS + "  " + numS + "  " + durS + "  " + iconS
+		plainRow := dispS + "  " + fileS + "  " + wfS + "  " + numS + "  " + durS + "  " + iconS
 		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(plainRow)
 	}
 
 	// normal: per-element styles
-	st   := m.styles.StatusStyle(run.Status, run.Conclusion).Render(iconS)
+	st := m.styles.StatusStyle(run.Status, run.Conclusion).Render(iconS)
 	file := m.styles.Dimmed.Render(fileS)
-	dur  := m.styles.Duration.Render(durS)
+	dur := m.styles.Duration.Render(durS)
 	disp := m.styles.Dimmed.Render(dispS)
-	return disp + "  " + wfS + "  " + file + "  " + numS + "  " + dur + "  " + st
+	return disp + "  " + file + "  " + wfS + "  " + numS + "  " + dur + "  " + st
 }
 
 func renderDetail(m Model, width int) string {
