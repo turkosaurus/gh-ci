@@ -8,8 +8,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Do Work
+      - name: First Job
         run: |
-          echo "Hello, World!"
-          echo "This is a test workflow."
+          echo "Starting!"
+      - name: Second Job
+        run: |
+          echo "Finishing!"
 
