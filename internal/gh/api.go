@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/jay-418/gh-ci/internal/types"
+	"github.com/turkosaurus/gh-ci/internal/types"
 )
 
 // Client wraps the gh CLI for API calls

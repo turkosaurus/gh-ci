@@ -5,8 +5,8 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jay-418/gh-ci/internal/config"
-	"github.com/jay-418/gh-ci/internal/ui"
+	"github.com/turkosaurus/gh-ci/internal/config"
+	"github.com/turkosaurus/gh-ci/internal/ui"
 )
 
 func main() {

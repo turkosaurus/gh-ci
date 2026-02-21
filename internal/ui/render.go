@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/jay-418/gh-ci/internal/gh"
-	"github.com/jay-418/gh-ci/internal/types"
-	"github.com/jay-418/gh-ci/internal/ui/styles"
+	"github.com/turkosaurus/gh-ci/internal/gh"
+	"github.com/turkosaurus/gh-ci/internal/types"
+	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
 
 func (m Model) View() string {

@@ -1,4 +1,4 @@
-module github.com/jay-418/gh-ci
+module github.com/turkosaurus/gh-ci
 
 go 1.24.7
 

@@ -16,13 +16,13 @@ A terminal UI dashboard for viewing and managing GitHub Actions workflow runs, b
 ### As a gh extension
 
 ```bash
-gh extension install jay-418/gh-ci
+gh extension install turkosaurus/gh-ci
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/jay-418/gh-ci.git
+git clone https://github.com/turkosaurus/gh-ci.git
 cd gh-ci
 go build -o gh-ci
 ```

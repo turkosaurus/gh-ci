@@ -7,11 +7,11 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jay-418/gh-ci/internal/config"
-	"github.com/jay-418/gh-ci/internal/gh"
-	"github.com/jay-418/gh-ci/internal/types"
-	"github.com/jay-418/gh-ci/internal/ui/keys"
-	"github.com/jay-418/gh-ci/internal/ui/styles"
+	"github.com/turkosaurus/gh-ci/internal/config"
+	"github.com/turkosaurus/gh-ci/internal/gh"
+	"github.com/turkosaurus/gh-ci/internal/types"
+	"github.com/turkosaurus/gh-ci/internal/ui/keys"
+	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
 
 type Screen int
