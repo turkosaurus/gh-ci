@@ -34,8 +34,9 @@ func renderMain(m Model) string {
 
 	var body string
 	if m.panelOpen {
-		leftW := w * 55 / 100
-		rightW := w - leftW - 1 // 1 for separator
+		const maxPanelW = 40
+		rightW := min(maxPanelW, w*40/100)
+		leftW := w - rightW - 1 // 1 for separator
 		sep := lipgloss.NewStyle().
 			Foreground(styles.ColorSubtle).
 			Render(strings.Repeat("│\n", bodyH-1) + "│")
@@ -275,7 +276,7 @@ func renderLogs(m Model) string {
 		m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
 		m.styles.HelpKey.Render("g/G") + " " + m.styles.HelpDesc.Render("top/bottom"),
 		m.styles.HelpKey.Render("ctrl+u/d") + " " + m.styles.HelpDesc.Render("½ page"),
-		m.styles.HelpKey.Render("esc") + " " + m.styles.HelpDesc.Render("back"),
+		m.styles.HelpKey.Render("h/esc") + " " + m.styles.HelpDesc.Render("back"),
 		m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
 	}
 	sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))

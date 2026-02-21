@@ -421,7 +421,7 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 
-	case key.Matches(msg, m.keys.Back):
+	case key.Matches(msg, m.keys.Back), msg.String() == "h":
 		m.screen = ScreenMain
 
 	case key.Matches(msg, m.keys.Up):
