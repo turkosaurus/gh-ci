@@ -71,6 +71,13 @@ type WorkflowDef struct {
 	File string // e.g. "ci.yaml"
 }
 
+// Run status values as returned by the GitHub API (WorkflowRun.Status).
+const (
+	RunStatusQueued     = "queued"
+	RunStatusInProgress = "in_progress"
+	RunStatusCompleted  = "completed"
+)
+
 // StatusFilter represents the filter options for workflow run status
 type StatusFilter string
 
@@ -83,7 +90,7 @@ const (
 
 // GetStatus returns a display-friendly status string
 func (r *WorkflowRun) GetStatus() string {
-	if r.Status == "completed" {
+	if r.Status == RunStatusCompleted {
 		return r.Conclusion
 	}
 	return r.Status
@@ -91,7 +98,7 @@ func (r *WorkflowRun) GetStatus() string {
 
 // Duration returns the duration of the workflow run
 func (r *WorkflowRun) Duration() time.Duration {
-	if r.Status == "completed" {
+	if r.Status == RunStatusCompleted {
 		return r.UpdatedAt.Sub(r.RunStartedAt)
 	}
 	return time.Since(r.RunStartedAt)

@@ -30,6 +30,16 @@ const (
 // workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
 const workflowAll = "*"
 
+// Panel indices for activePanel.
+const (
+	panelWorkflows = 0
+	panelRuns      = 1
+	panelDetail    = 2
+)
+
+// logViewOverhead is the number of rows consumed by header, spacing, and help bar in the log view.
+const logViewOverhead = 4
+
 // logContextLine is one display row in the context-window log view.
 type logContextLine struct {
 	lineNo  int    // 1-based original line number; 0 = blank separator
@@ -434,10 +444,8 @@ func (m *Model) applyFilter() {
 	}
 	sort.Strings(workflows)
 	workflows = append([]string{workflowAll}, workflows...)
-	// Preserve workflowCursor by name across re-derives
-	// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
-	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-		prevWf := m.workflows[m.workflowCursor-1]
+	// Preserve workflowCursor by name across re-derives.
+	if prevWf := m.selectedWorkflow(); prevWf != "" {
 		m.workflowCursor = 1 // default to workflowAll if not found
 		for i, w := range workflows {
 			if w == prevWf {
@@ -450,19 +458,16 @@ func (m *Model) applyFilter() {
 	}
 	m.workflows = workflows
 
-	// Apply workflow filter (cursor 0=branch, 1..N=workflows[0..N-1])
+	// Apply workflow filter.
 	runs = branchRuns
-	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-		wfName := m.workflows[m.workflowCursor-1]
-		if wfName != workflowAll {
-			var wf []types.WorkflowRun
-			for _, r := range runs {
-				if r.Name == wfName {
-					wf = append(wf, r)
-				}
+	if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+		var wf []types.WorkflowRun
+		for _, r := range runs {
+			if r.Name == wfName {
+				wf = append(wf, r)
 			}
-			runs = wf
 		}
+		runs = wf
 	}
 
 	m.filteredRuns = runs
@@ -476,6 +481,15 @@ func (m Model) selectedRun() *types.WorkflowRun {
 		return &m.filteredRuns[m.cursor]
 	}
 	return nil
+}
+
+// selectedWorkflow returns the workflow name at the current workflow cursor,
+// or "" when the branch row (cursor 0) or an out-of-range position is selected.
+func (m Model) selectedWorkflow() string {
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		return m.workflows[m.workflowCursor-1]
+	}
+	return ""
 }
 
 
@@ -693,7 +707,7 @@ func (m Model) handleDispatchConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 	switch m.activePanel {
-	case 0:
+	case panelWorkflows:
 		n := m.workflowCursor + delta
 		if n >= 0 && n <= len(m.workflows) {
 			m.workflowCursor = n
@@ -705,7 +719,7 @@ func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 				return m, m.loadJobs(run.Repository.FullName, run.ID)
 			}
 		}
-	case 1:
+	case panelRuns:
 		n := m.cursor + delta
 		if n >= 0 && n < len(m.filteredRuns) {
 			m.cursor = n
@@ -715,7 +729,7 @@ func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 				return m, m.loadJobs(run.Repository.FullName, run.ID)
 			}
 		}
-	case 2:
+	case panelDetail:
 		n := m.jobCursor + delta
 		if n >= 0 && n < len(m.jobs) {
 			m.jobCursor = n
@@ -727,7 +741,7 @@ func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
 	const pageSize = 10
 	switch m.activePanel {
-	case 0:
+	case panelWorkflows:
 		n := max(0, min(len(m.workflows), m.workflowCursor+dir*pageSize))
 		if n != m.workflowCursor {
 			m.workflowCursor = n
@@ -739,7 +753,7 @@ func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
 				return m, m.loadJobs(run.Repository.FullName, run.ID)
 			}
 		}
-	case 1:
+	case panelRuns:
 		n := max(0, min(len(m.filteredRuns)-1, m.cursor+dir*pageSize))
 		if n != m.cursor {
 			m.cursor = n
@@ -755,7 +769,7 @@ func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
 
 func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 	switch m.activePanel {
-	case 0:
+	case panelWorkflows:
 		if top {
 			m.workflowCursor = 0
 		} else {
@@ -768,7 +782,7 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 		if run := m.selectedRun(); run != nil {
 			return m, m.loadJobs(run.Repository.FullName, run.ID)
 		}
-	case 1:
+	case panelRuns:
 		if top {
 			m.cursor = 0
 		} else {
@@ -779,7 +793,7 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 		if run := m.selectedRun(); run != nil {
 			return m, m.loadJobs(run.Repository.FullName, run.ID)
 		}
-	case 2:
+	case panelDetail:
 		if top {
 			m.jobCursor = 0
 		} else {
@@ -791,11 +805,8 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 
 func (m Model) openURL() string {
 	switch m.activePanel {
-	case 0:
-		wfName := ""
-		if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-			wfName = m.workflows[m.workflowCursor-1]
-		}
+	case panelWorkflows:
+		wfName := m.selectedWorkflow()
 		if wfName == "" || wfName == workflowAll {
 			// branch cell or "all workflows" — open repo actions page
 			if run := m.selectedRun(); run != nil {
@@ -815,11 +826,11 @@ func (m Model) openURL() string {
 				}
 			}
 		}
-	case 1:
+	case panelRuns:
 		if run := m.selectedRun(); run != nil {
 			return run.HTMLURL
 		}
-	case 2:
+	case panelDetail:
 		if m.jobCursor < len(m.jobs) {
 			return m.jobs[m.jobCursor].HTMLURL
 		}
@@ -851,21 +862,21 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.moveCursorEdge(false)
 
 	case key.Matches(msg, m.keys.Logs): // l — move right between panels
-		if m.activePanel < 2 {
+		if m.activePanel < panelDetail {
 			m.activePanel++
 		}
 
 	case key.Matches(msg, m.keys.Enter):
-		if m.activePanel == 0 && m.workflowCursor == 0 {
+		if m.activePanel == panelWorkflows && m.workflowCursor == 0 {
 			m.branchInput.SetValue("")
 			m.branchInput.Focus()
 			m.branchSuggestionCursor = 0
 			m.branchSelecting = true
 			return m, textinput.Blink
-		} else if m.activePanel < 2 {
+		} else if m.activePanel < panelDetail {
 			m.activePanel++
 		} else if m.jobCursor < len(m.jobs) {
-			// panel 2: enter opens logs for the selected job
+			// detail panel: enter opens logs for the selected job
 			if run := m.selectedRun(); run != nil {
 				job := m.jobs[m.jobCursor]
 				m.message = "loading logs..."
@@ -874,7 +885,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Left): // move left between panels
-		if m.activePanel > 0 {
+		if m.activePanel > panelWorkflows {
 			m.activePanel--
 		}
 
@@ -891,15 +902,14 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Cancel):
-		if run := m.selectedRun(); run != nil && run.Status == "in_progress" {
+		if run := m.selectedRun(); run != nil && run.Status == types.RunStatusInProgress {
 			m.message = "cancelling..."
 			return m, m.cancelWorkflow(run.Repository.FullName, run.ID)
 		}
 
 	case key.Matches(msg, m.keys.Dispatch):
-		if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-			wfName := m.workflows[m.workflowCursor-1]
-			if wfName != workflowAll {
+		if m.activePanel == panelWorkflows {
+			if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
 					m.dispatchFile = file
@@ -960,7 +970,7 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	} else {
 		displayLen = len(strings.Split(m.logs, "\n"))
 	}
-	visibleLines := m.height - 4
+	visibleLines := m.height - logViewOverhead
 
 	switch {
 	case key.Matches(msg, m.keys.Quit):

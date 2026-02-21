@@ -16,6 +16,11 @@ func bindingHelp(s styles.Styles, b key.Binding) string {
 	return s.HelpKey.Render(b.Help().Key) + " " + s.HelpDesc.Render(b.Help().Desc)
 }
 
+const timestampFormat = "2006-01-02 15:04"
+
+// colSep is the number of spaces between columns in the runs list.
+const colSep = 2
+
 func (m Model) View() string {
 	if m.loading && len(m.allRuns) == 0 {
 		return m.styles.Dimmed.Render("loading workflow runs...")
@@ -86,17 +91,17 @@ func renderPanelHeaders(m Model, workflowW, runsW, detailW int) string {
 		Align(lipgloss.Center).
 		Render(
 			lipgloss.JoinHorizontal(lipgloss.Top,
-				label(0, "WORKFLOWS", workflowW),
+				label(panelWorkflows, "WORKFLOWS", workflowW),
 				sep,
-				label(1, "RUNS", runsW),
+				label(panelRuns, "RUNS", runsW),
 				sep,
-				label(2, "DETAIL", detailW),
+				label(panelDetail, "DETAIL", detailW),
 			),
 		)
 }
 
 func renderWorkflows(m Model, width, height int) string {
-	active := m.activePanel == 0
+	active := m.activePanel == panelWorkflows
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorGray)
 	if active {
@@ -159,11 +164,8 @@ func renderWorkflows(m Model, width, height int) string {
 
 	// Check if we have a filename to pin at the bottom
 	var filenameStr string
-	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-		wfName := m.workflows[m.workflowCursor-1]
-		if wfName != workflowAll {
-			filenameStr = m.workflowFiles[wfName]
-		}
+	if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+		filenameStr = m.workflowFiles[wfName]
 	}
 
 	branchSectionH := len(rows)
@@ -214,14 +216,14 @@ func renderWorkflows(m Model, width, height int) string {
 }
 
 func renderList(m Model, width, height int) string {
-	active := m.activePanel == 1
+	active := m.activePanel == panelRuns
 
 	if len(m.filteredRuns) == 0 {
 		return m.styles.Dimmed.Render("no workflow runs")
 	}
 
 	const colOk, colNum, colDur, colFile, colDispatched = 2, 6, 7, 14, 16
-	colWorkflow := width - colOk - colNum - colDur - colFile - colDispatched - 10
+	colWorkflow := width - colOk - colNum - colDur - colFile - colDispatched - 5*colSep
 	if colWorkflow < 10 {
 		colWorkflow = 10
 	}
@@ -267,7 +269,7 @@ func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, 
 	fileS := fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile))
 	numS := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
 	durS := fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds())))
-	dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006-01-02 15:04"))
+	dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format(timestampFormat))
 
 	if selected && active {
 		// Per-element styles with shared background so status/duration colors are preserved.
@@ -281,7 +283,7 @@ func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, 
 		st := m.styles.StatusStyle(run.Status, run.Conclusion).Background(styles.ColorBgLight).Render(iconS)
 		row := disp + sep + file + sep + wf + sep + num + sep + dur + sep + st
 		// pad remaining width with background so the bar extends to the edge
-		used := colDispatched + 2 + colWorkflow + 2 + colFile + 2 + colNum + 2 + colDur + 2 + colOk
+		used := colDispatched + colWorkflow + colFile + colNum + colDur + colOk + 5*colSep
 		if pad := width - used; pad > 0 {
 			row += bg.Render(strings.Repeat(" ", pad))
 		}
@@ -302,7 +304,7 @@ func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, 
 }
 
 func renderDetail(m Model, width int) string {
-	active := m.activePanel == 2
+	active := m.activePanel == panelDetail
 
 	run := m.selectedRun()
 	if run == nil {
@@ -394,12 +396,12 @@ func renderHelpBar(m Model, width int) string {
 	var items []string
 	if run := m.selectedRun(); run != nil {
 		items = append(items, bindingHelp(m.styles, m.keys.Rerun))
-		if run.Status == "in_progress" {
+		if run.Status == types.RunStatusInProgress {
 			items = append(items, bindingHelp(m.styles, m.keys.Cancel))
 		}
 	}
-	if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-		if wfName := m.workflows[m.workflowCursor-1]; wfName != workflowAll {
+	if m.activePanel == panelWorkflows {
+		if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
 			if _, ok := m.workflowFiles[wfName]; ok {
 				items = append(items, bindingHelp(m.styles, m.keys.Dispatch))
 			}
@@ -425,7 +427,7 @@ func renderLogs(m Model) string {
 		h = 24
 	}
 
-	visibleLines := h - 4
+	visibleLines := h - logViewOverhead
 	maxLineW := w - 8
 	if maxLineW < 40 {
 		maxLineW = 40
@@ -455,10 +457,7 @@ func renderLogs(m Model) string {
 				sb.WriteString("\n")
 				continue
 			}
-			text := cl.text
-			if len(text) > maxLineW {
-				text = text[:maxLineW-3] + "..."
-			}
+			text := gh.TruncateString(cl.text, maxLineW)
 			numStr := m.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", cl.lineNo))
 			if cl.isMatch {
 				sb.WriteString(numStr)
@@ -491,10 +490,7 @@ func renderLogs(m Model) string {
 		sb.WriteString("\n\n")
 
 		for i := m.logOffset; i < end; i++ {
-			line := logLines[i]
-			if len(line) > maxLineW {
-				line = line[:maxLineW-3] + "..."
-			}
+			line := gh.TruncateString(logLines[i], maxLineW)
 			sb.WriteString(m.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", i+1)))
 			sb.WriteString(m.styles.LogLine.Render(line))
 			sb.WriteString("\n")
