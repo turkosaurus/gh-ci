@@ -23,7 +23,6 @@ type KeyMap struct {
 	Top          key.Binding
 	Bottom       key.Binding
 	Tab          key.Binding
-	Panel        key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -104,10 +103,6 @@ func DefaultKeyMap() KeyMap {
 		Tab: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("tab", "next filter"),
-		),
-		Panel: key.NewBinding(
-			key.WithKeys("p"),
-			key.WithHelp("p", "toggle panel"),
 		),
 	}
 }

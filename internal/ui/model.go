@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sort"
 	"strings"
 	"time"
 
@@ -27,18 +28,22 @@ type Model struct {
 	styles styles.Styles
 	keys   keys.KeyMap
 
-	screen Screen
+	screen      Screen
+	activePanel int // 0=workflows, 1=runs, 2=detail
 
 	// data
 	allRuns      []types.WorkflowRun
 	filteredRuns []types.WorkflowRun
+	workflows    []string
 	jobs         []types.Job
 	logs         string
 	logJobName   string
 
 	// navigation
-	cursor    int
-	logOffset int
+	workflowCursor int
+	cursor         int
+	jobCursor      int
+	logOffset      int
 
 	// filter/search
 	filter      types.StatusFilter
@@ -51,9 +56,8 @@ type Model struct {
 	height int
 
 	// state
-	loading    bool
-	message    string
-	panelOpen  bool
+	loading bool
+	message string
 
 	// rerun confirmation
 	confirming  bool
@@ -95,7 +99,6 @@ func NewModel(cfg *config.Config) Model {
 		filter:    types.StatusAll,
 		textInput: ti,
 		loading:   true,
-		panelOpen: true,
 	}
 }
 
@@ -172,8 +175,35 @@ func clearMsg() tea.Cmd {
 	})
 }
 
+func deriveWorkflows(runs []types.WorkflowRun) []string {
+	seen := map[string]bool{}
+	var names []string
+	for _, r := range runs {
+		if !seen[r.Name] {
+			seen[r.Name] = true
+			names = append(names, r.Name)
+		}
+	}
+	sort.Strings(names)
+	return append([]string{"all"}, names...)
+}
+
 func (m *Model) applyFilter() {
-	m.filteredRuns = filterRuns(m.allRuns, m.filter, m.searchQuery)
+	runs := m.allRuns
+
+	// Workflow panel filter
+	if m.workflowCursor > 0 && m.workflowCursor < len(m.workflows) {
+		wf := m.workflows[m.workflowCursor]
+		var wfRuns []types.WorkflowRun
+		for _, r := range runs {
+			if r.Name == wf {
+				wfRuns = append(wfRuns, r)
+			}
+		}
+		runs = wfRuns
+	}
+
+	m.filteredRuns = filterRuns(runs, m.filter, m.searchQuery)
 	if m.cursor >= len(m.filteredRuns) {
 		m.cursor = max(0, len(m.filteredRuns)-1)
 	}
@@ -250,6 +280,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = "error: " + msg.err.Error()
 		} else {
 			m.allRuns = msg.runs
+			m.workflows = deriveWorkflows(m.allRuns)
+			if m.workflowCursor >= len(m.workflows) {
+				m.workflowCursor = 0
+			}
 			m.applyFilter()
 			if run := m.selectedRun(); run != nil {
 				cmds = append(cmds, m.loadJobs(run.Repository.FullName, run.ID))
@@ -259,6 +293,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case jobsLoadedMsg:
 		if msg.err == nil {
 			m.jobs = msg.jobs
+			if m.jobCursor >= len(m.jobs) {
+				m.jobCursor = 0
+			}
 		}
 
 	case logsLoadedMsg:
@@ -324,67 +361,147 @@ func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// moveCursor moves the cursor in the active panel by delta (-1 or +1).
+func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
+	switch m.activePanel {
+	case 0:
+		n := m.workflowCursor + delta
+		if n >= 0 && n < len(m.workflows) {
+			m.workflowCursor = n
+			m.applyFilter()
+			m.cursor = 0
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case 1:
+		n := m.cursor + delta
+		if n >= 0 && n < len(m.filteredRuns) {
+			m.cursor = n
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case 2:
+		n := m.jobCursor + delta
+		if n >= 0 && n < len(m.jobs) {
+			m.jobCursor = n
+		}
+	}
+	return m, nil
+}
+
+func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
+	const pageSize = 10
+	switch m.activePanel {
+	case 0:
+		n := max(0, min(len(m.workflows)-1, m.workflowCursor+dir*pageSize))
+		if n != m.workflowCursor {
+			m.workflowCursor = n
+			m.applyFilter()
+			m.cursor = 0
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case 1:
+		n := max(0, min(len(m.filteredRuns)-1, m.cursor+dir*pageSize))
+		if n != m.cursor {
+			m.cursor = n
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
+	switch m.activePanel {
+	case 0:
+		if top {
+			m.workflowCursor = 0
+		} else {
+			m.workflowCursor = max(0, len(m.workflows)-1)
+		}
+		m.applyFilter()
+		m.cursor = 0
+		m.jobs = nil
+		m.jobCursor = 0
+		if run := m.selectedRun(); run != nil {
+			return m, m.loadJobs(run.Repository.FullName, run.ID)
+		}
+	case 1:
+		if top {
+			m.cursor = 0
+		} else {
+			m.cursor = max(0, len(m.filteredRuns)-1)
+		}
+		m.jobs = nil
+		m.jobCursor = 0
+		if run := m.selectedRun(); run != nil {
+			return m, m.loadJobs(run.Repository.FullName, run.ID)
+		}
+	case 2:
+		if top {
+			m.jobCursor = 0
+		} else {
+			m.jobCursor = max(0, len(m.jobs)-1)
+		}
+	}
+	return m, nil
+}
+
 func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.Up):
-		if m.cursor > 0 {
-			m.cursor--
-			m.jobs = nil
-			if run := m.selectedRun(); run != nil {
-				return m, m.loadJobs(run.Repository.FullName, run.ID)
-			}
-		}
+		return m.moveCursor(-1)
 
 	case key.Matches(msg, m.keys.Down):
-		if m.cursor < len(m.filteredRuns)-1 {
-			m.cursor++
-			m.jobs = nil
-			if run := m.selectedRun(); run != nil {
-				return m, m.loadJobs(run.Repository.FullName, run.ID)
-			}
-		}
+		return m.moveCursor(1)
 
 	case key.Matches(msg, m.keys.PageUp):
-		m.cursor = max(0, m.cursor-10)
-		m.jobs = nil
-		if run := m.selectedRun(); run != nil {
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
-		}
+		return m.moveCursorPage(-1)
 
 	case key.Matches(msg, m.keys.PageDown):
-		if len(m.filteredRuns) > 0 {
-			m.cursor = min(len(m.filteredRuns)-1, m.cursor+10)
-		}
-		m.jobs = nil
-		if run := m.selectedRun(); run != nil {
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
-		}
+		return m.moveCursorPage(1)
 
 	case key.Matches(msg, m.keys.Top):
-		m.cursor = 0
-		m.jobs = nil
-		if run := m.selectedRun(); run != nil {
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
-		}
+		return m.moveCursorEdge(true)
 
 	case key.Matches(msg, m.keys.Bottom):
-		if len(m.filteredRuns) > 0 {
-			m.cursor = len(m.filteredRuns) - 1
-		}
-		m.jobs = nil
-		if run := m.selectedRun(); run != nil {
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
+		return m.moveCursorEdge(false)
+
+	case key.Matches(msg, m.keys.Logs): // l — move right, or open logs from detail panel
+		switch m.activePanel {
+		case 0:
+			m.activePanel = 1
+		case 1:
+			m.activePanel = 2
+		case 2:
+			if m.jobCursor < len(m.jobs) {
+				if run := m.selectedRun(); run != nil {
+					job := m.jobs[m.jobCursor]
+					m.message = "loading logs..."
+					return m, m.loadLogs(run.Repository.FullName, job.ID, job.Name)
+				}
+			}
 		}
 
-	case key.Matches(msg, m.keys.Logs):
-		if len(m.jobs) > 0 {
-			if run := m.selectedRun(); run != nil {
-				m.message = "loading logs..."
-				return m, m.loadLogs(run.Repository.FullName, m.jobs[0].ID, m.jobs[0].Name)
-			}
+	case msg.String() == "h": // move left between panels
+		if m.activePanel > 0 {
+			m.activePanel--
 		}
 
 	case key.Matches(msg, m.keys.Open):
@@ -433,9 +550,6 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Refresh):
 		m.message = "refreshing..."
 		return m, m.loadRuns()
-
-	case key.Matches(msg, m.keys.Panel):
-		m.panelOpen = !m.panelOpen
 	}
 
 	return m, nil
@@ -449,7 +563,7 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 
-	case key.Matches(msg, m.keys.Back), msg.String() == "h":
+	case key.Matches(msg, m.keys.Back), msg.String() == "h", msg.Type == tea.KeyBackspace:
 		m.screen = ScreenMain
 
 	case key.Matches(msg, m.keys.Up):
