@@ -72,31 +72,10 @@ func renderWorkflows(m Model, width, height int) string {
 	const maxSugg = 4
 	var rows []string
 
-	// ── REPO section ─────────────────────────────────────────────────────────
+	// ── REPO section (display only) ──────────────────────────────────────────
 	rows = append(rows, headerStyle.Render("REPO"))
-
-	if m.repoSelecting {
-		rows = append(rows, m.repoInput.View())
-		suggestions := m.filteredRepos()
-		limit := maxSugg
-		if limit > len(suggestions) {
-			limit = len(suggestions)
-		}
-		for i, r := range suggestions[:limit] {
-			if i == m.repoSuggestionCursor {
-				rows = append(rows, selectedStyle.Render("> "+gh.TruncateString(r, width-4)))
-			} else {
-				rows = append(rows, m.styles.Dimmed.Render("  "+gh.TruncateString(r, width-4)))
-			}
-		}
-	} else {
-		text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(m.selectedRepo(), width-2))
-		if m.workflowCursor == 0 && active {
-			rows = append(rows, selectedStyle.Render(text))
-		} else {
-			rows = append(rows, m.styles.Repo.Render(text))
-		}
-	}
+	repoDisplay := strings.Join(m.config.Repos, ", ")
+	rows = append(rows, m.styles.Repo.Render(fmt.Sprintf("%-*s", width-2, gh.TruncateString(repoDisplay, width-2))))
 
 	// Separator
 	rows = append(rows, m.styles.Dimmed.Render(strings.Repeat("─", width-1)))
@@ -125,7 +104,7 @@ func renderWorkflows(m Model, width, height int) string {
 		}
 	} else {
 		text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(branchDisplay, width-2))
-		if m.workflowCursor == 1 && active {
+		if m.workflowCursor == 0 && active {
 			rows = append(rows, selectedStyle.Render(text))
 		} else {
 			rows = append(rows, m.styles.Branch.Render(text))
@@ -145,8 +124,8 @@ func renderWorkflows(m Model, width, height int) string {
 
 	// Check if we have a filename to pin at the bottom
 	var filenameStr string
-	if m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-		wfName := m.workflows[m.workflowCursor-2]
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		wfName := m.workflows[m.workflowCursor-1]
 		if wfName != workflowAll {
 			filenameStr = m.workflowFiles[wfName]
 		}
@@ -162,10 +141,10 @@ func renderWorkflows(m Model, width, height int) string {
 	}
 
 	// wfCursor: index within m.workflows for scroll calculation
-	// cursor scheme: 0=repo, 1=branch, 2..N+1=workflows[0..N-1]
+	// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
 	wfCursor := 0
-	if m.workflowCursor > 1 {
-		wfCursor = m.workflowCursor - 2
+	if m.workflowCursor > 0 {
+		wfCursor = m.workflowCursor - 1
 	}
 	startIdx := 0
 	if wfCursor >= workflowListH {
@@ -175,7 +154,7 @@ func renderWorkflows(m Model, width, height int) string {
 
 	for i := startIdx; i < endIdx; i++ {
 		wfName := m.workflows[i]
-		selected := (i + 2) == m.workflowCursor
+		selected := (i + 1) == m.workflowCursor
 		text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(wfName, width-2))
 		var row string
 		switch {
@@ -350,7 +329,7 @@ func renderHelpBar(m Model, width int) string {
 			m.styles.HelpKey.Render("esc") + " " + m.styles.HelpDesc.Render("cancel")
 	}
 
-	if m.repoSelecting || m.branchSelecting {
+	if m.branchSelecting {
 		return m.styles.Dimmed.Render("↑/↓ navigate  ↵ confirm  esc cancel")
 	}
 
@@ -376,16 +355,14 @@ func renderHelpBar(m Model, width int) string {
 	if m.activePanel == 2 {
 		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("logs"))
 	} else if m.activePanel == 0 && m.workflowCursor == 0 {
-		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("select repo"))
-	} else if m.activePanel == 0 && m.workflowCursor == 1 {
 		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("select branch"))
 	}
 	items = append(items,
 		m.styles.HelpKey.Render("r")+" "+m.styles.HelpDesc.Render("rerun"),
 		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),
 	)
-	if m.activePanel == 0 && m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-		if wfName := m.workflows[m.workflowCursor-2]; wfName != workflowAll {
+	if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		if wfName := m.workflows[m.workflowCursor-1]; wfName != workflowAll {
 			if _, ok := m.workflowFiles[wfName]; ok {
 				items = append(items, m.styles.HelpKey.Render("d")+" "+m.styles.HelpDesc.Render("dispatch"))
 			}

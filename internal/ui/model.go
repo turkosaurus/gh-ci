@@ -72,12 +72,6 @@ type Model struct {
 	searching   bool
 	textInput   textinput.Model
 
-	// repo selection
-	repoIdx              int
-	repoSelecting        bool
-	repoInput            textinput.Model
-	repoSuggestionCursor int
-
 	// branch selection
 	branchSelecting        bool
 	branchInput            textinput.Model
@@ -169,26 +163,22 @@ func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 50
-	ri := textinput.New()
-	ri.Placeholder = "filter repos..."
-	ri.CharLimit = 100
 	bi := textinput.New()
 	bi.Placeholder = "filter branches..."
 	bi.CharLimit = 100
 	return Model{
-		config:        cfg,
-		client:        gh.NewClient(),
-		styles:        styles.DefaultStyles(),
-		keys:          keys.DefaultKeyMap(),
-		textInput:     ti,
-		repoInput:     ri,
-		branchInput:   bi,
+		config:         cfg,
+		client:         gh.NewClient(),
+		styles:         styles.DefaultStyles(),
+		keys:           keys.DefaultKeyMap(),
+		textInput:      ti,
+		branchInput:    bi,
 		loading:        true,
-		workflowCursor: 2, // start on workflowAll (0=repo, 1=branch, 2=workflows[0])
+		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
 		localDefs:      scanLocalWorkflows(),
 		workflowFiles:  make(map[string]string),
-		defaultBranch: cfg.DefaultBranch,
-		localBranch:   currentGitBranch(),
+		defaultBranch:  cfg.DefaultBranch,
+		localBranch:    currentGitBranch(),
 	}
 }
 
@@ -314,27 +304,6 @@ func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (w
 	return
 }
 
-func (m Model) selectedRepo() string {
-	if m.repoIdx < len(m.config.Repos) {
-		return m.config.Repos[m.repoIdx]
-	}
-	if len(m.config.Repos) > 0 {
-		return m.config.Repos[0]
-	}
-	return ""
-}
-
-func (m Model) filteredRepos() []string {
-	q := strings.ToLower(m.repoInput.Value())
-	var out []string
-	for _, r := range m.config.Repos {
-		if q == "" || strings.Contains(strings.ToLower(r), q) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
-
 func (m Model) filteredBranches() []string {
 	q := strings.ToLower(m.branchInput.Value())
 	var out []string
@@ -355,17 +324,6 @@ func (m Model) selectedBranch() string {
 
 func (m *Model) applyFilter() {
 	runs := m.allRuns
-
-	// Apply repo filter.
-	if repo := m.selectedRepo(); repo != "" {
-		var repoRuns []types.WorkflowRun
-		for _, r := range runs {
-			if r.Repository.FullName == repo {
-				repoRuns = append(repoRuns, r)
-			}
-		}
-		runs = repoRuns
-	}
 
 	// Apply branch filter — always active since there is no "all branches" option.
 	branchRuns := runs
@@ -408,25 +366,25 @@ func (m *Model) applyFilter() {
 	sort.Strings(workflows)
 	workflows = append([]string{workflowAll}, workflows...)
 	// Preserve workflowCursor by name across re-derives
-	// cursor scheme: 0=repo, 1=branch, 2..N+1=workflows[0..N-1]
-	if m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-		prevWf := m.workflows[m.workflowCursor-2]
-		m.workflowCursor = 2 // default to workflowAll if not found
+	// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		prevWf := m.workflows[m.workflowCursor-1]
+		m.workflowCursor = 1 // default to workflowAll if not found
 		for i, w := range workflows {
 			if w == prevWf {
-				m.workflowCursor = i + 2
+				m.workflowCursor = i + 1
 				break
 			}
 		}
-	} else if m.workflowCursor > len(workflows)+1 {
+	} else if m.workflowCursor > len(workflows) {
 		m.workflowCursor = 0
 	}
 	m.workflows = workflows
 
-	// Apply workflow filter (cursor 0=repo, 1=branch, 2..N+1=workflows[0..N-1])
+	// Apply workflow filter (cursor 0=branch, 1..N=workflows[0..N-1])
 	runs = branchRuns
-	if m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-		wfName := m.workflows[m.workflowCursor-2]
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		wfName := m.workflows[m.workflowCursor-1]
 		if wfName != workflowAll {
 			var wf []types.WorkflowRun
 			for _, r := range runs {
@@ -476,9 +434,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
-		if m.repoSelecting {
-			return m.handleRepoSelect(msg)
-		}
 		if m.branchSelecting {
 			return m.handleBranchSelect(msg)
 		}
@@ -537,8 +492,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			// cursor scheme: 0=repo, 1=branch, 2..N+1=workflows[0..N-1]
-			if m.workflowCursor > len(m.workflows)+1 {
+			// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
+			if m.workflowCursor > len(m.workflows) {
 				m.workflowCursor = 0
 			}
 			m.applyFilter()
@@ -673,50 +628,6 @@ func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m Model) handleRepoSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEscape:
-		m.repoSelecting = false
-		m.repoInput.Blur()
-		return m, nil
-	case tea.KeyEnter:
-		suggestions := m.filteredRepos()
-		if len(suggestions) > 0 {
-			idx := m.repoSuggestionCursor
-			if idx >= len(suggestions) {
-				idx = len(suggestions) - 1
-			}
-			chosen := suggestions[idx]
-			for i, r := range m.config.Repos {
-				if r == chosen {
-					m.repoIdx = i
-					break
-				}
-			}
-		}
-		m.repoSelecting = false
-		m.repoInput.Blur()
-		m.applyFilter()
-		m.cursor = 0
-		return m, nil
-	case tea.KeyUp:
-		if m.repoSuggestionCursor > 0 {
-			m.repoSuggestionCursor--
-		}
-		return m, nil
-	case tea.KeyDown:
-		suggestions := m.filteredRepos()
-		if m.repoSuggestionCursor < len(suggestions)-1 {
-			m.repoSuggestionCursor++
-		}
-		return m, nil
-	default:
-		var cmd tea.Cmd
-		m.repoInput, cmd = m.repoInput.Update(msg)
-		m.repoSuggestionCursor = 0
-		return m, cmd
-	}
-}
 
 func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
@@ -750,7 +661,7 @@ func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 	switch m.activePanel {
 	case 0:
 		n := m.workflowCursor + delta
-		if n >= 0 && n <= len(m.workflows)+1 {
+		if n >= 0 && n <= len(m.workflows) {
 			m.workflowCursor = n
 			m.applyFilter()
 			m.cursor = 0
@@ -783,7 +694,7 @@ func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
 	const pageSize = 10
 	switch m.activePanel {
 	case 0:
-		n := max(0, min(len(m.workflows)+1, m.workflowCursor+dir*pageSize))
+		n := max(0, min(len(m.workflows), m.workflowCursor+dir*pageSize))
 		if n != m.workflowCursor {
 			m.workflowCursor = n
 			m.applyFilter()
@@ -814,7 +725,7 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 		if top {
 			m.workflowCursor = 0
 		} else {
-			m.workflowCursor = len(m.workflows) + 1
+			m.workflowCursor = len(m.workflows)
 		}
 		m.applyFilter()
 		m.cursor = 0
@@ -848,16 +759,16 @@ func (m Model) openURL() string {
 	switch m.activePanel {
 	case 0:
 		wfName := ""
-		if m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-			wfName = m.workflows[m.workflowCursor-2]
+		if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+			wfName = m.workflows[m.workflowCursor-1]
 		}
 		if wfName == "" || wfName == workflowAll {
-			// repo/branch cell or "all workflows" — open repo actions page
+			// branch cell or "all workflows" — open repo actions page
 			if run := m.selectedRun(); run != nil {
 				return run.Repository.HTMLURL + "/actions"
 			}
-			if repo := m.selectedRepo(); repo != "" {
-				return "https://github.com/" + repo + "/actions"
+			if len(m.config.Repos) > 0 {
+				return "https://github.com/" + m.config.Repos[0] + "/actions"
 			}
 		} else {
 			// specific workflow — open its actions/workflows page
@@ -912,12 +823,6 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		if m.activePanel == 0 && m.workflowCursor == 0 {
-			m.repoInput.SetValue("")
-			m.repoInput.Focus()
-			m.repoSuggestionCursor = 0
-			m.repoSelecting = true
-			return m, textinput.Blink
-		} else if m.activePanel == 0 && m.workflowCursor == 1 {
 			m.branchInput.SetValue("")
 			m.branchInput.Focus()
 			m.branchSuggestionCursor = 0
@@ -956,8 +861,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Dispatch):
-		if m.activePanel == 0 && m.workflowCursor > 1 && m.workflowCursor <= len(m.workflows)+1 {
-			wfName := m.workflows[m.workflowCursor-2]
+		if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+			wfName := m.workflows[m.workflowCursor-1]
 			if wfName != workflowAll {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
