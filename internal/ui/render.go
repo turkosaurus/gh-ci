@@ -31,18 +31,22 @@ func renderMain(m Model) string {
 
 	// 1 title line + 1 help line
 	bodyH := h - 2
-	leftW := w * 55 / 100
-	rightW := w - leftW - 1 // 1 for separator
 
-	sep := lipgloss.NewStyle().
-		Foreground(styles.ColorSubtle).
-		Render(strings.Repeat("│\n", bodyH-1) + "│")
-
-	body := lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftW).Height(bodyH).Render(renderList(m, leftW, bodyH)),
-		sep,
-		lipgloss.NewStyle().Width(rightW).Height(bodyH).Render(renderDetail(m, rightW)),
-	)
+	var body string
+	if m.panelOpen {
+		leftW := w * 55 / 100
+		rightW := w - leftW - 1 // 1 for separator
+		sep := lipgloss.NewStyle().
+			Foreground(styles.ColorSubtle).
+			Render(strings.Repeat("│\n", bodyH-1) + "│")
+		body = lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Width(leftW).Height(bodyH).Render(renderList(m, leftW, bodyH)),
+			sep,
+			lipgloss.NewStyle().Width(rightW).Height(bodyH).Render(renderDetail(m, rightW)),
+		)
+	} else {
+		body = lipgloss.NewStyle().Width(w).Height(bodyH).Render(renderList(m, w, bodyH))
+	}
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTitle(m, w),
@@ -220,6 +224,7 @@ func renderHelpBar(m Model, width int) string {
 		m.styles.HelpKey.Render("c") + " " + m.styles.HelpDesc.Render("cancel"),
 		m.styles.HelpKey.Render("o") + " " + m.styles.HelpDesc.Render("open"),
 		m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("search"),
+		m.styles.HelpKey.Render("p") + " " + m.styles.HelpDesc.Render("panel"),
 		m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
 	}
 	return m.styles.Dimmed.Render(strings.Join(items, "  "))

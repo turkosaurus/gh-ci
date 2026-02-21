@@ -51,8 +51,9 @@ type Model struct {
 	height int
 
 	// state
-	loading bool
-	message string
+	loading    bool
+	message    string
+	panelOpen  bool
 }
 
 type (
@@ -89,6 +90,7 @@ func NewModel(cfg *config.Config) Model {
 		filter:    types.StatusAll,
 		textInput: ti,
 		loading:   true,
+		panelOpen: true,
 	}
 }
 
@@ -403,6 +405,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Refresh):
 		m.message = "refreshing..."
 		return m, m.loadRuns()
+
+	case key.Matches(msg, m.keys.Panel):
+		m.panelOpen = !m.panelOpen
 	}
 
 	return m, nil
