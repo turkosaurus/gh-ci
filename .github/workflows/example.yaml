@@ -1,0 +1,15 @@
+name: Test Workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Do Work
+        run: |
+          echo "Hello, World!"
+          echo "This is a test workflow."
+
