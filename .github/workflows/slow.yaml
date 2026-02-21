@@ -1,0 +1,27 @@
+name: slow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          for i in $(seq 1 120); do
+            echo "$i..."
+            sleep 1
+          done
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test
+        run: |
+          for i in $(seq 1 120); do
+            echo "$i..."
+            sleep 1
+          done

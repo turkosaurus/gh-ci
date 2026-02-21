@@ -84,6 +84,23 @@ func (c *Client) CancelWorkflow(repo string, runID int64) error {
 	return err
 }
 
+// GetWorkflowFilename fetches the filename (e.g. "fast.yaml") for a workflow ID
+func (c *Client) GetWorkflowFilename(repo string, workflowID int64) (string, error) {
+	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%d", repo, workflowID)
+	output, err := c.apiCall("GET", endpoint)
+	if err != nil {
+		return "", err
+	}
+	var wf struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(output, &wf); err != nil {
+		return "", err
+	}
+	parts := strings.Split(wf.Path, "/")
+	return parts[len(parts)-1], nil
+}
+
 // OpenInBrowser opens a URL in the default browser
 func (c *Client) OpenInBrowser(url string) error {
 	cmd := exec.Command("gh", "browse", "--url", url)

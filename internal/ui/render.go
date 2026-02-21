@@ -69,31 +69,70 @@ func renderWorkflows(m Model, width, height int) string {
 	}
 	rows := []string{headerStyle.Render("WORKFLOW")}
 
-	if len(m.workflows) == 0 {
+	if len(m.workflowList) == 0 {
 		rows = append(rows, m.styles.Dimmed.Render("loading..."))
 		return strings.Join(rows, "\n")
 	}
 
+	// Check if we have a filename to pin at the bottom
+	var filenameStr string
+	if m.workflowCursor < len(m.workflowList) {
+		e := m.workflowList[m.workflowCursor]
+		if e.workflow != "" {
+			for _, r := range m.allRuns {
+				if r.Name == e.workflow {
+					if filename, ok := m.workflowFiles[r.WorkflowID]; ok {
+						filenameStr = filename
+					}
+					break
+				}
+			}
+		}
+	}
+
 	listH := height - 1
+	if filenameStr != "" {
+		listH = height - 2
+	}
+
 	startIdx := 0
 	if m.workflowCursor >= listH {
 		startIdx = m.workflowCursor - listH + 1
 	}
-	endIdx := min(startIdx+listH, len(m.workflows))
+	endIdx := min(startIdx+listH, len(m.workflowList))
 
 	for i := startIdx; i < endIdx; i++ {
-		cell := fmt.Sprintf("%-*s", width-2, gh.TruncateString(m.workflows[i], width-2))
+		e := m.workflowList[i]
 		selected := i == m.workflowCursor
+
+		var text string
+		if e.indent {
+			// branch row: "  branchname" padded to width-2
+			text = fmt.Sprintf("%-*s", width-2, "  "+gh.TruncateString(e.branch, width-4))
+		} else {
+			text = fmt.Sprintf("%-*s", width-2, gh.TruncateString(e.displayName(), width-2))
+		}
+
 		var row string
 		switch {
 		case selected && active:
-			row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(cell)
+			row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(text)
 		case selected:
-			row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(cell)
+			row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(text)
+		case e.indent && e.branch == m.defaultBranch:
+			// default branch gets branch color to distinguish it
+			row = m.styles.Branch.Render(text)
 		default:
-			row = m.styles.Normal.Render(cell)
+			row = m.styles.Normal.Render(text)
 		}
 		rows = append(rows, row)
+	}
+
+	if filenameStr != "" {
+		for len(rows) < height-1 {
+			rows = append(rows, "")
+		}
+		rows = append(rows, m.styles.Dimmed.Render(gh.TruncateString(filenameStr, width-2)))
 	}
 
 	return strings.Join(rows, "\n")

@@ -11,6 +11,7 @@ type WorkflowRun struct {
 	HeadSHA      string    `json:"head_sha"`
 	Status       string    `json:"status"`       // queued, in_progress, completed
 	Conclusion   string    `json:"conclusion"`   // success, failure, cancelled, skipped, etc.
+	WorkflowID   int64     `json:"workflow_id"`
 	RunNumber    int       `json:"run_number"`
 	RunAttempt   int       `json:"run_attempt"`
 	HTMLURL      string    `json:"html_url"`

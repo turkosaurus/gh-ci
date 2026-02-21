@@ -1,0 +1,16 @@
+name: fast
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-script:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: First Job
+        run: |
+          echo "Starting!"
+      - name: Second Job
+        run: |
+          echo "Finishing!"

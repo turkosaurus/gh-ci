@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -22,6 +23,23 @@ const (
 	ScreenLogs
 )
 
+// workflowEntry is a row in the left panel — either a workflow name or a branch under one.
+type workflowEntry struct {
+	workflow string // empty = "all"
+	branch   string // empty = all branches for this workflow
+	indent   bool   // true for branch-level rows
+}
+
+func (e workflowEntry) displayName() string {
+	if e.workflow == "" {
+		return "all"
+	}
+	if e.indent {
+		return e.branch
+	}
+	return e.workflow
+}
+
 type Model struct {
 	config *config.Config
 	client *gh.Client
@@ -34,10 +52,13 @@ type Model struct {
 	// data
 	allRuns      []types.WorkflowRun
 	filteredRuns []types.WorkflowRun
-	workflows    []string
+	workflowList []workflowEntry
 	jobs         []types.Job
 	logs         string
 	logJobName   string
+
+	// workflow filename cache: workflow_id → filename (e.g. "fast.yaml")
+	workflowFiles map[int64]string
 
 	// navigation
 	workflowCursor int
@@ -55,8 +76,9 @@ type Model struct {
 	height int
 
 	// state
-	loading bool
-	message string
+	loading       bool
+	message       string
+	defaultBranch string
 
 	// rerun confirmation
 	confirming  bool
@@ -84,19 +106,34 @@ type (
 	}
 	tickMsg     time.Time
 	clearMsgMsg struct{}
+
+	workflowFileMsg struct {
+		workflowID int64
+		filename   string
+	}
 )
+
+func currentGitBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
 
 func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 50
 	return Model{
-		config:    cfg,
-		client:    gh.NewClient(),
-		styles:    styles.DefaultStyles(),
-		keys:      keys.DefaultKeyMap(),
-		textInput: ti,
-		loading:   true,
+		config:        cfg,
+		client:        gh.NewClient(),
+		styles:        styles.DefaultStyles(),
+		keys:          keys.DefaultKeyMap(),
+		textInput:     ti,
+		loading:       true,
+		workflowFiles: make(map[int64]string),
+		defaultBranch: currentGitBranch(),
 	}
 }
 
@@ -144,6 +181,16 @@ func (m Model) loadLogs(repo string, jobID int64, jobName string) tea.Cmd {
 	}
 }
 
+func (m Model) loadWorkflowFile(repo string, workflowID int64) tea.Cmd {
+	return func() tea.Msg {
+		filename, err := m.client.GetWorkflowFilename(repo, workflowID)
+		if err != nil {
+			return nil
+		}
+		return workflowFileMsg{workflowID: workflowID, filename: filename}
+	}
+}
+
 func (m Model) rerunWorkflow(repo string, runID int64, debug bool) tea.Cmd {
 	return func() tea.Msg {
 		err := m.client.RerunWorkflow(repo, runID, debug)
@@ -173,34 +220,68 @@ func clearMsg() tea.Cmd {
 	})
 }
 
-func deriveWorkflows(runs []types.WorkflowRun) []string {
-	seen := map[string]bool{}
-	var names []string
+// deriveWorkflowList builds the left-panel list: "all", then each workflow with
+// its branches indented underneath. defaultBranch sorts first within each workflow.
+func deriveWorkflowList(runs []types.WorkflowRun, defaultBranch string) []workflowEntry {
+	type wfData struct{ branches map[string]bool }
+	seen := map[string]*wfData{}
+	var order []string
+
 	for _, r := range runs {
-		if !seen[r.Name] {
-			seen[r.Name] = true
-			names = append(names, r.Name)
+		if _, ok := seen[r.Name]; !ok {
+			seen[r.Name] = &wfData{branches: map[string]bool{}}
+			order = append(order, r.Name)
+		}
+		seen[r.Name].branches[r.HeadBranch] = true
+	}
+	sort.Strings(order)
+
+	list := []workflowEntry{{}} // "all"
+	for _, wf := range order {
+		list = append(list, workflowEntry{workflow: wf})
+
+		var branches []string
+		for b := range seen[wf].branches {
+			branches = append(branches, b)
+		}
+		sort.Strings(branches)
+		// move default branch to front
+		for i, b := range branches {
+			if b == defaultBranch {
+				branches = append([]string{b}, append(branches[:i], branches[i+1:]...)...)
+				break
+			}
+		}
+		for _, b := range branches {
+			list = append(list, workflowEntry{workflow: wf, branch: b, indent: true})
 		}
 	}
-	sort.Strings(names)
-	return append([]string{"all"}, names...)
+	return list
 }
 
 func (m *Model) applyFilter() {
 	runs := m.allRuns
-
-	// Workflow panel filter
-	if m.workflowCursor > 0 && m.workflowCursor < len(m.workflows) {
-		wf := m.workflows[m.workflowCursor]
-		var wfRuns []types.WorkflowRun
-		for _, r := range runs {
-			if r.Name == wf {
-				wfRuns = append(wfRuns, r)
+	if m.workflowCursor < len(m.workflowList) {
+		e := m.workflowList[m.workflowCursor]
+		if e.workflow != "" {
+			var wf []types.WorkflowRun
+			for _, r := range runs {
+				if r.Name == e.workflow {
+					wf = append(wf, r)
+				}
 			}
+			runs = wf
 		}
-		runs = wfRuns
+		if e.branch != "" {
+			var br []types.WorkflowRun
+			for _, r := range runs {
+				if r.HeadBranch == e.branch {
+					br = append(br, r)
+				}
+			}
+			runs = br
+		}
 	}
-
 	m.filteredRuns = filterRuns(runs, m.searchQuery)
 	if m.cursor >= len(m.filteredRuns) {
 		m.cursor = max(0, len(m.filteredRuns)-1)
@@ -258,13 +339,24 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.message = "error: " + msg.err.Error()
 		} else {
 			m.allRuns = msg.runs
-			m.workflows = deriveWorkflows(m.allRuns)
-			if m.workflowCursor >= len(m.workflows) {
+			m.workflowList = deriveWorkflowList(m.allRuns, m.defaultBranch)
+			if m.workflowCursor >= len(m.workflowList) {
 				m.workflowCursor = 0
 			}
 			m.applyFilter()
 			if run := m.selectedRun(); run != nil {
 				cmds = append(cmds, m.loadJobs(run.Repository.FullName, run.ID))
+			}
+			// fetch filenames for uncached workflow IDs
+			seen := map[int64]bool{}
+			for _, r := range m.allRuns {
+				if r.WorkflowID == 0 || seen[r.WorkflowID] {
+					continue
+				}
+				seen[r.WorkflowID] = true
+				if _, ok := m.workflowFiles[r.WorkflowID]; !ok {
+					cmds = append(cmds, m.loadWorkflowFile(r.Repository.FullName, r.WorkflowID))
+				}
 			}
 		}
 
@@ -300,6 +392,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case clearMsgMsg:
 		m.message = ""
+
+	case workflowFileMsg:
+		m.workflowFiles[msg.workflowID] = msg.filename
 	}
 
 	return m, tea.Batch(cmds...)
@@ -339,12 +434,11 @@ func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// moveCursor moves the cursor in the active panel by delta (-1 or +1).
 func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
 	switch m.activePanel {
 	case 0:
 		n := m.workflowCursor + delta
-		if n >= 0 && n < len(m.workflows) {
+		if n >= 0 && n < len(m.workflowList) {
 			m.workflowCursor = n
 			m.applyFilter()
 			m.cursor = 0
@@ -377,7 +471,7 @@ func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
 	const pageSize = 10
 	switch m.activePanel {
 	case 0:
-		n := max(0, min(len(m.workflows)-1, m.workflowCursor+dir*pageSize))
+		n := max(0, min(len(m.workflowList)-1, m.workflowCursor+dir*pageSize))
 		if n != m.workflowCursor {
 			m.workflowCursor = n
 			m.applyFilter()
@@ -408,7 +502,7 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 		if top {
 			m.workflowCursor = 0
 		} else {
-			m.workflowCursor = max(0, len(m.workflows)-1)
+			m.workflowCursor = max(0, len(m.workflowList)-1)
 		}
 		m.applyFilter()
 		m.cursor = 0
@@ -441,17 +535,26 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 func (m Model) openURL() string {
 	switch m.activePanel {
 	case 0:
-		if m.workflowCursor == 0 {
-			// "all" — open repo actions page
-			if run := m.selectedRun(); run != nil {
-				return run.Repository.HTMLURL + "/actions"
-			}
-			if len(m.config.Repos) > 0 {
-				return "https://github.com/" + m.config.Repos[0] + "/actions"
-			}
-		} else {
-			if run := m.selectedRun(); run != nil {
-				return run.HTMLURL
+		if m.workflowCursor < len(m.workflowList) {
+			e := m.workflowList[m.workflowCursor]
+			if e.workflow == "" {
+				// "all" — open repo actions page
+				if run := m.selectedRun(); run != nil {
+					return run.Repository.HTMLURL + "/actions"
+				}
+				if len(m.config.Repos) > 0 {
+					return "https://github.com/" + m.config.Repos[0] + "/actions"
+				}
+			} else {
+				// specific workflow — open its actions/workflows page
+				for _, r := range m.allRuns {
+					if r.Name == e.workflow {
+						if filename, ok := m.workflowFiles[r.WorkflowID]; ok {
+							return r.Repository.HTMLURL + "/actions/workflows/" + filename
+						}
+						return r.HTMLURL
+					}
+				}
 			}
 		}
 	case 1:
