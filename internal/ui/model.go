@@ -873,7 +873,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case msg.String() == "h" || msg.String() == "left": // move left between panels
+	case key.Matches(msg, m.keys.Left): // move left between panels
 		if m.activePanel > 0 {
 			m.activePanel--
 		}
@@ -966,7 +966,7 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 
-	case key.Matches(msg, m.keys.Back), msg.String() == "h", msg.Type == tea.KeyBackspace:
+	case key.Matches(msg, m.keys.Back), key.Matches(msg, m.keys.Left), msg.Type == tea.KeyBackspace:
 		m.screen = ScreenMain
 		m.logQuery = ""
 		m.logSearching = false
@@ -974,19 +974,19 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logMatchGroups = nil
 		m.logMatchIdx = 0
 
-	case msg.String() == "/":
+	case key.Matches(msg, m.keys.Search):
 		m.logSearching = true
 		m.textInput.SetValue("")
 		m.textInput.Focus()
 		return m, textinput.Blink
 
-	case msg.String() == "n":
+	case key.Matches(msg, m.keys.SearchNext):
 		if m.logQuery != "" && m.logMatchIdx < len(m.logMatchGroups)-1 {
 			m.logMatchIdx++
 			m.logOffset = m.logMatchGroups[m.logMatchIdx]
 		}
 
-	case msg.String() == "p":
+	case key.Matches(msg, m.keys.SearchPrev):
 		if m.logQuery != "" && m.logMatchIdx > 0 {
 			m.logMatchIdx--
 			m.logOffset = m.logMatchGroups[m.logMatchIdx]

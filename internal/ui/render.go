@@ -4,11 +4,17 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/turkosaurus/gh-ci/internal/gh"
 	"github.com/turkosaurus/gh-ci/internal/types"
 	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
+
+// bindingHelp renders a single key binding as a "key  desc" help item.
+func bindingHelp(s styles.Styles, b key.Binding) string {
+	return s.HelpKey.Render(b.Help().Key) + " " + s.HelpDesc.Render(b.Help().Desc)
+}
 
 func (m Model) View() string {
 	if m.loading && len(m.allRuns) == 0 {
@@ -385,23 +391,29 @@ func renderHelpBar(m Model, width int) string {
 		return m.styles.Dimmed.Render(m.message)
 	}
 
-	items := []string{}
-	items = append(items,
-		m.styles.HelpKey.Render("r")+" "+m.styles.HelpDesc.Render("rerun"),
-		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),
-	)
+	var items []string
+	if run := m.selectedRun(); run != nil {
+		items = append(items, bindingHelp(m.styles, m.keys.Rerun))
+		if run.Status == "in_progress" {
+			items = append(items, bindingHelp(m.styles, m.keys.Cancel))
+		}
+	}
 	if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 		if wfName := m.workflows[m.workflowCursor-1]; wfName != workflowAll {
 			if _, ok := m.workflowFiles[wfName]; ok {
-				items = append(items, m.styles.HelpKey.Render("d")+" "+m.styles.HelpDesc.Render("dispatch"))
+				items = append(items, bindingHelp(m.styles, m.keys.Dispatch))
 			}
 		}
 	}
-	items = append(items,
-		m.styles.HelpKey.Render("o")+" "+m.styles.HelpDesc.Render("open"),
-		m.styles.HelpKey.Render("q")+" "+m.styles.HelpDesc.Render("quit"),
-	)
-	return m.styles.Dimmed.Render(strings.Join(items, "  "))
+	items = append(items, bindingHelp(m.styles, m.keys.Open))
+
+	left := strings.Join(items, "  ")
+	right := bindingHelp(m.styles, m.keys.Quit)
+	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 2 {
+		gap = 2
+	}
+	return left + strings.Repeat(" ", gap) + right
 }
 
 func renderLogs(m Model) string {
@@ -500,23 +512,23 @@ func renderLogs(m Model) string {
 		sb.WriteString(prompt + strings.Repeat(" ", gap) + esc)
 	} else if m.logQuery != "" {
 		helpItems := []string{
-			m.styles.HelpKey.Render("n") + " " + m.styles.HelpDesc.Render("next"),
-			m.styles.HelpKey.Render("p") + " " + m.styles.HelpDesc.Render("prev"),
+			bindingHelp(m.styles, m.keys.SearchNext),
+			bindingHelp(m.styles, m.keys.SearchPrev),
 			m.styles.HelpKey.Render("↑/↓") + " " + m.styles.HelpDesc.Render("scroll"),
-			m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("new search"),
+			m.styles.HelpKey.Render(m.keys.Search.Help().Key) + " " + m.styles.HelpDesc.Render("new search"),
 			m.styles.HelpKey.Render("h/esc") + " " + m.styles.HelpDesc.Render("back"),
-			m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
+			bindingHelp(m.styles, m.keys.Quit),
 		}
 		sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 	} else {
 		helpItems := []string{
-			m.styles.HelpKey.Render("↑/k") + " " + m.styles.HelpDesc.Render("up"),
-			m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
+			bindingHelp(m.styles, m.keys.Up),
+			bindingHelp(m.styles, m.keys.Down),
 			m.styles.HelpKey.Render("g/G") + " " + m.styles.HelpDesc.Render("top/bottom"),
 			m.styles.HelpKey.Render("ctrl+u/d") + " " + m.styles.HelpDesc.Render("½ page"),
-			m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("search"),
+			bindingHelp(m.styles, m.keys.Search),
 			m.styles.HelpKey.Render("h/esc/⌫") + " " + m.styles.HelpDesc.Render("back"),
-			m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
+			bindingHelp(m.styles, m.keys.Quit),
 		}
 		sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 	}
