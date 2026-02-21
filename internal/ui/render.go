@@ -262,12 +262,17 @@ func renderHelpBar(m Model, width int) string {
 		m.styles.HelpKey.Render("↑/k") + " " + m.styles.HelpDesc.Render("up"),
 		m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
 		m.styles.HelpKey.Render("h/l") + " " + m.styles.HelpDesc.Render("panels"),
-		m.styles.HelpKey.Render("r") + " " + m.styles.HelpDesc.Render("rerun"),
-		m.styles.HelpKey.Render("c") + " " + m.styles.HelpDesc.Render("cancel"),
-		m.styles.HelpKey.Render("o") + " " + m.styles.HelpDesc.Render("open"),
-		m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("search"),
-		m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
 	}
+	if m.activePanel == 2 {
+		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("logs"))
+	}
+	items = append(items,
+		m.styles.HelpKey.Render("r")+" "+m.styles.HelpDesc.Render("rerun"),
+		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),
+		m.styles.HelpKey.Render("o")+" "+m.styles.HelpDesc.Render("open"),
+		m.styles.HelpKey.Render("/")+" "+m.styles.HelpDesc.Render("search"),
+		m.styles.HelpKey.Render("q")+" "+m.styles.HelpDesc.Render("quit"),
+	)
 	return m.styles.Dimmed.Render(strings.Join(items, "  "))
 }
 

@@ -438,6 +438,34 @@ func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) openURL() string {
+	switch m.activePanel {
+	case 0:
+		if m.workflowCursor == 0 {
+			// "all" — open repo actions page
+			if run := m.selectedRun(); run != nil {
+				return run.Repository.HTMLURL + "/actions"
+			}
+			if len(m.config.Repos) > 0 {
+				return "https://github.com/" + m.config.Repos[0] + "/actions"
+			}
+		} else {
+			if run := m.selectedRun(); run != nil {
+				return run.HTMLURL
+			}
+		}
+	case 1:
+		if run := m.selectedRun(); run != nil {
+			return run.HTMLURL
+		}
+	case 2:
+		if m.jobCursor < len(m.jobs) {
+			return m.jobs[m.jobCursor].HTMLURL
+		}
+	}
+	return ""
+}
+
 func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -461,19 +489,17 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Bottom):
 		return m.moveCursorEdge(false)
 
-	case key.Matches(msg, m.keys.Logs): // l — move right, or open logs from detail panel
-		switch m.activePanel {
-		case 0:
-			m.activePanel = 1
-		case 1:
-			m.activePanel = 2
-		case 2:
-			if m.jobCursor < len(m.jobs) {
-				if run := m.selectedRun(); run != nil {
-					job := m.jobs[m.jobCursor]
-					m.message = "loading logs..."
-					return m, m.loadLogs(run.Repository.FullName, job.ID, job.Name)
-				}
+	case key.Matches(msg, m.keys.Logs): // l — move right between panels
+		if m.activePanel < 2 {
+			m.activePanel++
+		}
+
+	case key.Matches(msg, m.keys.Enter): // enter — open logs from detail panel
+		if m.activePanel == 2 && m.jobCursor < len(m.jobs) {
+			if run := m.selectedRun(); run != nil {
+				job := m.jobs[m.jobCursor]
+				m.message = "loading logs..."
+				return m, m.loadLogs(run.Repository.FullName, job.ID, job.Name)
 			}
 		}
 
@@ -483,8 +509,8 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Open):
-		if run := m.selectedRun(); run != nil {
-			m.client.OpenInBrowser(run.HTMLURL)
+		if url := m.openURL(); url != "" {
+			m.client.OpenInBrowser(url)
 		}
 
 	case key.Matches(msg, m.keys.Rerun):
