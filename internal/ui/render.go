@@ -234,7 +234,7 @@ func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, colWork
 	file := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile)))
 	num := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
 	dur := m.styles.Duration.Render(fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds()))))
-	dispatched := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006 01 02 15:04")))
+	dispatched := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006-01-02 15:04")))
 
 	row := dispatched + " " + st + " " + workflow + "  " + file + "  " + num + "  " + dur
 
@@ -347,16 +347,7 @@ func renderHelpBar(m Model, width int) string {
 		return m.styles.Dimmed.Render(m.message)
 	}
 
-	items := []string{
-		m.styles.HelpKey.Render("↑/k") + " " + m.styles.HelpDesc.Render("up"),
-		m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
-		m.styles.HelpKey.Render("h/l") + " " + m.styles.HelpDesc.Render("panels"),
-	}
-	if m.activePanel == 2 {
-		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("logs"))
-	} else if m.activePanel == 0 && m.workflowCursor == 0 {
-		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("select branch"))
-	}
+	items := []string{}
 	items = append(items,
 		m.styles.HelpKey.Render("r")+" "+m.styles.HelpDesc.Render("rerun"),
 		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),

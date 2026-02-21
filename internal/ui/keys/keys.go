@@ -53,8 +53,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("d", "dispatch"),
 		),
 		Logs: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "logs"),
+			key.WithKeys("l", "right"),
+			key.WithHelp("l/→", "right"),
 		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),

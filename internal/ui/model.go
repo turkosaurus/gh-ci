@@ -828,8 +828,10 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.branchSuggestionCursor = 0
 			m.branchSelecting = true
 			return m, textinput.Blink
-		} else if m.activePanel == 2 && m.jobCursor < len(m.jobs) {
-			// open logs from detail panel
+		} else if m.activePanel < 2 {
+			m.activePanel++
+		} else if m.jobCursor < len(m.jobs) {
+			// panel 2: enter opens logs for the selected job
 			if run := m.selectedRun(); run != nil {
 				job := m.jobs[m.jobCursor]
 				m.message = "loading logs..."
@@ -837,7 +839,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case msg.String() == "h": // move left between panels
+	case msg.String() == "h" || msg.String() == "left": // move left between panels
 		if m.activePanel > 0 {
 			m.activePanel--
 		}
