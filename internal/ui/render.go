@@ -75,8 +75,8 @@ func renderWorkflows(m Model, width, height int) string {
 	// ── BRANCH section ──────────────────────────────────────────────────────
 	rows = append(rows, headerStyle.Render("BRANCH"))
 
-	branchDisplay := "all branches"
-	if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+	branchDisplay := m.defaultBranch
+	if m.branchIdx < len(m.availableBranches) {
 		branchDisplay = m.availableBranches[m.branchIdx]
 	}
 
@@ -88,14 +88,10 @@ func renderWorkflows(m Model, width, height int) string {
 			limit = len(suggestions)
 		}
 		for i, b := range suggestions[:limit] {
-			display := b
-			if b == "" {
-				display = "all branches"
-			}
 			if i == m.branchSuggestionCursor {
-				rows = append(rows, selectedStyle.Render("> "+gh.TruncateString(display, width-4)))
+				rows = append(rows, selectedStyle.Render("> "+gh.TruncateString(b, width-4)))
 			} else {
-				rows = append(rows, m.styles.Dimmed.Render("  "+gh.TruncateString(display, width-4)))
+				rows = append(rows, m.styles.Dimmed.Render("  "+gh.TruncateString(b, width-4)))
 			}
 		}
 	} else {
@@ -184,8 +180,8 @@ func renderList(m Model, width, height int) string {
 		return m.styles.Dimmed.Render("no workflow runs")
 	}
 
-	const colSt, colNum, colDur, colBranch, colWorkflow = 2, 6, 9, 14, 18
-	colRepo := width - colSt - colNum - colDur - colBranch - colWorkflow - 5
+	const colSt, colNum, colDur, colFile, colWorkflow = 2, 6, 9, 14, 18
+	colRepo := width - colSt - colNum - colDur - colFile - colWorkflow - 5
 	if colRepo < 10 {
 		colRepo = 10
 	}
@@ -197,7 +193,7 @@ func renderList(m Model, width, height int) string {
 	header := fmt.Sprintf("  %-*s  %-*s  %-*s  %*s  %-*s",
 		colRepo, "REPO",
 		colWorkflow, "WORKFLOW",
-		colBranch, "BRANCH",
+		colFile, "FILE",
 		colNum, "RUN",
 		colDur, "TIME",
 	)
@@ -212,7 +208,7 @@ func renderList(m Model, width, height int) string {
 
 	for i := startIdx; i < endIdx; i++ {
 		rows = append(rows, renderRunRow(m, m.filteredRuns[i], i == m.cursor, active,
-			colRepo, colWorkflow, colBranch, colNum, colDur))
+			colRepo, colWorkflow, colFile, colNum, colDur))
 	}
 
 	if len(m.filteredRuns) > listH {
@@ -223,16 +219,16 @@ func renderList(m Model, width, height int) string {
 	return strings.Join(rows, "\n")
 }
 
-func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, colRepo, colWorkflow, colBranch, colNum, colDur int) string {
+func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, colRepo, colWorkflow, colFile, colNum, colDur int) string {
 	icon := styles.StatusIcon(run.Status, run.Conclusion)
 	st := m.styles.StatusStyle(run.Status, run.Conclusion).Render(icon)
 	repo := m.styles.Repo.Render(fmt.Sprintf("%-*s", colRepo, gh.TruncateString(run.Repository.FullName, colRepo)))
 	workflow := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
-	branch := m.styles.Branch.Render(fmt.Sprintf("%-*s", colBranch, gh.TruncateString(run.HeadBranch, colBranch)))
+	file := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile)))
 	num := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
 	dur := m.styles.Duration.Render(fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds()))))
 
-	row := st + " " + repo + "  " + workflow + "  " + branch + "  " + num + "  " + dur
+	row := st + " " + repo + "  " + workflow + "  " + file + "  " + num + "  " + dur
 
 	switch {
 	case selected && active:

@@ -272,7 +272,7 @@ func clearMsg() tea.Cmd {
 }
 
 // deriveWorkflows collects unique workflow names (sorted, prefixed with "all")
-// and unique branch names (sorted, prefixed with "" meaning all branches).
+// and unique branch names (sorted, no sentinel — all entries are real branches).
 // localDefs are merged in so workflows with no runs still appear.
 func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (workflows []string, branches []string) {
 	wfSeen := map[string]bool{}
@@ -294,7 +294,6 @@ func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (w
 		branches = append(branches, b)
 	}
 	sort.Strings(branches)
-	branches = append([]string{""}, branches...)
 	return
 }
 
@@ -302,11 +301,7 @@ func (m Model) filteredBranches() []string {
 	q := strings.ToLower(m.branchInput.Value())
 	var out []string
 	for _, b := range m.availableBranches {
-		display := b
-		if b == "" {
-			display = "all branches"
-		}
-		if q == "" || strings.Contains(strings.ToLower(display), q) {
+		if q == "" || strings.Contains(strings.ToLower(b), q) {
 			out = append(out, b)
 		}
 	}
@@ -314,7 +309,7 @@ func (m Model) filteredBranches() []string {
 }
 
 func (m Model) selectedBranch() string {
-	if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+	if m.branchIdx < len(m.availableBranches) {
 		return m.availableBranches[m.branchIdx]
 	}
 	return m.defaultBranch
@@ -323,8 +318,9 @@ func (m Model) selectedBranch() string {
 func (m *Model) applyFilter() {
 	runs := m.allRuns
 
-	// Apply branch filter
-	if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+	// Apply branch filter — always active since there is no "all branches" option.
+	branchRuns := runs
+	if m.branchIdx < len(m.availableBranches) {
 		branch := m.availableBranches[m.branchIdx]
 		var br []types.WorkflowRun
 		for _, r := range runs {
@@ -332,10 +328,47 @@ func (m *Model) applyFilter() {
 				br = append(br, r)
 			}
 		}
-		runs = br
+		branchRuns = br
 	}
 
-	// Apply workflow filter (workflowCursor 0 = branch cell; 1..N = workflows[0..N-1])
+	// Re-derive workflow list from branch-filtered runs, plus any local def that
+	// has never run anywhere (so it can be dispatched from any branch).
+	wfSeen := map[string]bool{}
+	for _, r := range branchRuns {
+		wfSeen[r.Name] = true
+	}
+	hasRunsAnywhere := map[string]bool{}
+	for _, r := range m.allRuns {
+		hasRunsAnywhere[r.Name] = true
+	}
+	for _, def := range m.localDefs {
+		if !hasRunsAnywhere[def.Name] {
+			wfSeen[def.Name] = true
+		}
+	}
+	var workflows []string
+	for w := range wfSeen {
+		workflows = append(workflows, w)
+	}
+	sort.Strings(workflows)
+	workflows = append([]string{"all"}, workflows...)
+	// Preserve workflowCursor by name across re-derives
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		prevWf := m.workflows[m.workflowCursor-1]
+		m.workflowCursor = 0
+		for i, w := range workflows {
+			if w == prevWf {
+				m.workflowCursor = i + 1
+				break
+			}
+		}
+	} else if m.workflowCursor > len(workflows) {
+		m.workflowCursor = 0
+	}
+	m.workflows = workflows
+
+	// Apply workflow filter (workflowCursor 0 = branch row; 1..N = workflows[0..N-1])
+	runs = branchRuns
 	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 		wfName := m.workflows[m.workflowCursor-1]
 		if wfName != "all" {
@@ -420,7 +453,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prevBranch = m.availableBranches[m.branchIdx]
 			}
 			m.workflows, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
-			// ensure defaultBranch is always present in availableBranches
+			// ensure defaultBranch is always present (it may have no runs yet)
 			if m.defaultBranch != "" {
 				found := false
 				for _, b := range m.availableBranches {
@@ -430,9 +463,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				if !found {
-					rest := append(m.availableBranches[1:], m.defaultBranch)
-					sort.Strings(rest)
-					m.availableBranches = append([]string{""}, rest...)
+					m.availableBranches = append(m.availableBranches, m.defaultBranch)
+					sort.Strings(m.availableBranches)
 				}
 			}
 			m.branchIdx = 0
@@ -772,11 +804,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		if m.activePanel == 0 && m.workflowCursor == 0 {
-			cur := ""
-			if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
-				cur = m.availableBranches[m.branchIdx]
-			}
-			m.branchInput.SetValue(cur)
+			m.branchInput.SetValue("")
 			m.branchInput.Focus()
 			m.branchSuggestionCursor = 0
 			m.branchSelecting = true
