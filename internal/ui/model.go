@@ -80,7 +80,7 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 		start := max(0, mIdx-ctx)
 		end := min(len(lines)-1, mIdx+ctx)
 
-		if start > prevEnd+1 {
+		if prevEnd < 0 || start > prevEnd+1 {
 			// new non-adjacent group
 			if prevEnd >= 0 {
 				rows = append(rows, logContextLine{}) // blank separator
@@ -110,7 +110,7 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 
 type Model struct {
 	config *config.Config
-	client *gh.Client
+	client gh.Client
 	styles styles.Styles
 	keys   keys.KeyMap
 
