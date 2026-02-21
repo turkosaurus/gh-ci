@@ -14,4 +14,3 @@ jobs:
       - name: Second Job
         run: |
           echo "Finishing!"
-
