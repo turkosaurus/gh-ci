@@ -253,6 +253,28 @@ func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
 	}
 }
 
+// primaryBranchForWorkflow returns the branch with the most runs in the same repo
+// as the given workflow. The primary branch (main/master) always accumulates the
+// most runs from push, PR, and manual triggers, so it's the right dispatch ref.
+func (m Model) primaryBranchForWorkflow(name string) string {
+	repo := m.repoForWorkflow(name)
+	counts := map[string]int{}
+	for _, r := range m.allRuns {
+		if r.Repository.FullName == repo {
+			counts[r.HeadBranch]++
+		}
+	}
+	best := m.defaultBranch
+	bestCount := -1
+	for branch, count := range counts {
+		if count > bestCount {
+			bestCount = count
+			best = branch
+		}
+	}
+	return best
+}
+
 func (m Model) repoForWorkflow(name string) string {
 	for _, r := range m.allRuns {
 		if r.Name == name {
@@ -337,13 +359,19 @@ func (m *Model) applyFilter() {
 	for _, r := range branchRuns {
 		wfSeen[r.Name] = true
 	}
-	hasRunsAnywhere := map[string]bool{}
-	for _, r := range m.allRuns {
-		hasRunsAnywhere[r.Name] = true
+	selectedBranch := ""
+	if m.branchIdx < len(m.availableBranches) {
+		selectedBranch = m.availableBranches[m.branchIdx]
 	}
-	for _, def := range m.localDefs {
-		if !hasRunsAnywhere[def.Name] {
-			wfSeen[def.Name] = true
+	if selectedBranch == m.defaultBranch && m.defaultBranch != "" {
+		hasRunsAnywhere := map[string]bool{}
+		for _, r := range m.allRuns {
+			hasRunsAnywhere[r.Name] = true
+		}
+		for _, def := range m.localDefs {
+			if !hasRunsAnywhere[def.Name] {
+				wfSeen[def.Name] = true
+			}
 		}
 	}
 	var workflows []string
@@ -848,7 +876,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
 					m.dispatchFile = file
-					m.dispatchRef = m.selectedBranch()
+					m.dispatchRef = m.primaryBranchForWorkflow(wfName)
 					m.dispatchRepo = m.repoForWorkflow(wfName)
 				}
 			}
