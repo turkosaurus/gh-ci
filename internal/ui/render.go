@@ -203,6 +203,13 @@ func renderDetail(m Model, width int) string {
 }
 
 func renderHelpBar(m Model, width int) string {
+	if m.confirming {
+		return m.styles.Normal.Render("re-run?") + "  " +
+			m.styles.HelpKey.Render("y") + " " + m.styles.HelpDesc.Render("normal") + "  " +
+			m.styles.HelpKey.Render("d") + " " + m.styles.HelpDesc.Render("debug logs") + "  " +
+			m.styles.HelpKey.Render("esc") + " " + m.styles.HelpDesc.Render("cancel")
+	}
+
 	if m.searching {
 		prompt := m.styles.HelpKey.Render("/") + " " + m.textInput.View()
 		esc := m.styles.Dimmed.Render("esc to cancel")

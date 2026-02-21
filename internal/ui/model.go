@@ -54,6 +54,11 @@ type Model struct {
 	loading    bool
 	message    string
 	panelOpen  bool
+
+	// rerun confirmation
+	confirming  bool
+	confirmRepo string
+	confirmID   int64
 }
 
 type (
@@ -138,11 +143,14 @@ func (m Model) loadLogs(repo string, jobID int64, jobName string) tea.Cmd {
 	}
 }
 
-func (m Model) rerunWorkflow(repo string, runID int64) tea.Cmd {
+func (m Model) rerunWorkflow(repo string, runID int64, debug bool) tea.Cmd {
 	return func() tea.Msg {
-		err := m.client.RerunWorkflow(repo, runID)
+		err := m.client.RerunWorkflow(repo, runID, debug)
 		if err != nil {
 			return actionResultMsg{err: err}
+		}
+		if debug {
+			return actionResultMsg{message: "re-run triggered (debug logging enabled)"}
 		}
 		return actionResultMsg{message: "re-run triggered"}
 	}
@@ -226,6 +234,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.searching {
 			return m.handleSearch(msg)
 		}
+		if m.confirming {
+			return m.handleConfirm(msg)
+		}
 		switch m.screen {
 		case ScreenMain:
 			return m.handleMainKeys(msg)
@@ -295,6 +306,22 @@ func (m Model) handleSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 	return m, cmd
+}
+
+func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.confirming = false
+		m.message = "re-running..."
+		return m, m.rerunWorkflow(m.confirmRepo, m.confirmID, false)
+	case "d":
+		m.confirming = false
+		m.message = "re-running with debug..."
+		return m, m.rerunWorkflow(m.confirmRepo, m.confirmID, true)
+	case "esc", "q":
+		m.confirming = false
+	}
+	return m, nil
 }
 
 func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -367,8 +394,9 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Rerun):
 		if run := m.selectedRun(); run != nil {
-			m.message = "re-running..."
-			return m, m.rerunWorkflow(run.Repository.FullName, run.ID)
+			m.confirming = true
+			m.confirmRepo = run.Repository.FullName
+			m.confirmID = run.ID
 		}
 
 	case key.Matches(msg, m.keys.Cancel):

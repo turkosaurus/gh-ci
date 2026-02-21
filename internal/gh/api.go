@@ -59,10 +59,14 @@ func (c *Client) GetJobLogs(repo string, jobID int64) (string, error) {
 	return string(output), nil
 }
 
-// RerunWorkflow re-runs a workflow
-func (c *Client) RerunWorkflow(repo string, runID int64) error {
+// RerunWorkflow re-runs a workflow, optionally with debug logging enabled
+func (c *Client) RerunWorkflow(repo string, runID int64, debug bool) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/rerun", repo, runID)
-	_, err := c.apiCall("POST", endpoint)
+	var extra []string
+	if debug {
+		extra = []string{"-F", "enable_debug_logging=true"}
+	}
+	_, err := c.apiCall("POST", endpoint, extra...)
 	return err
 }
 
@@ -89,8 +93,8 @@ func (c *Client) OpenInBrowser(url string) error {
 }
 
 // apiCall makes an API call using the gh CLI
-func (c *Client) apiCall(method, endpoint string) ([]byte, error) {
-	args := []string{"api", "-X", method, endpoint}
+func (c *Client) apiCall(method, endpoint string, extraArgs ...string) ([]byte, error) {
+	args := append([]string{"api", "-X", method, endpoint}, extraArgs...)
 	cmd := exec.Command("gh", args...)
 	output, err := cmd.Output()
 	if err != nil {
