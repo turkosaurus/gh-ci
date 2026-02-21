@@ -9,6 +9,7 @@ type KeyMap struct {
 	Enter        key.Binding
 	Rerun        key.Binding
 	Cancel       key.Binding
+	Dispatch     key.Binding
 	Logs         key.Binding
 	Open         key.Binding
 	Filter       key.Binding
@@ -46,6 +47,10 @@ func DefaultKeyMap() KeyMap {
 		Cancel: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "cancel"),
+		),
+		Dispatch: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "dispatch"),
 		),
 		Logs: key.NewBinding(
 			key.WithKeys("l"),
@@ -104,7 +109,7 @@ func DefaultKeyMap() KeyMap {
 
 // ShortHelp returns the short help text
 func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Enter, k.Rerun, k.Cancel, k.Logs, k.Open, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Enter, k.Rerun, k.Cancel, k.Dispatch, k.Logs, k.Open, k.Quit}
 }
 
 // FullHelp returns the full help text
@@ -112,7 +117,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.PageUp, k.PageDown},
 		{k.Enter, k.Logs, k.Open, k.Back},
-		{k.Rerun, k.Cancel, k.Refresh},
+		{k.Rerun, k.Cancel, k.Dispatch, k.Refresh},
 		{k.Filter, k.Help, k.Quit},
 	}
 }

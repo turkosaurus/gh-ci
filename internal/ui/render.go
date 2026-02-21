@@ -69,24 +69,17 @@ func renderWorkflows(m Model, width, height int) string {
 	}
 	rows := []string{headerStyle.Render("WORKFLOW")}
 
-	if len(m.workflowList) == 0 {
+	if len(m.workflows) == 0 {
 		rows = append(rows, m.styles.Dimmed.Render("loading..."))
 		return strings.Join(rows, "\n")
 	}
 
-	// Check if we have a filename to pin at the bottom
+	// Check if we have a filename to pin at the bottom (only for specific workflow selections)
 	var filenameStr string
-	if m.workflowCursor < len(m.workflowList) {
-		e := m.workflowList[m.workflowCursor]
-		if e.workflow != "" {
-			for _, r := range m.allRuns {
-				if r.Name == e.workflow {
-					if filename, ok := m.workflowFiles[r.WorkflowID]; ok {
-						filenameStr = filename
-					}
-					break
-				}
-			}
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		wfName := m.workflows[m.workflowCursor-1]
+		if wfName != "all" {
+			filenameStr = m.workflowFiles[wfName]
 		}
 	}
 
@@ -95,37 +88,50 @@ func renderWorkflows(m Model, width, height int) string {
 		listH = height - 2
 	}
 
+	totalItems := 1 + len(m.workflows) // branch cell + workflow rows
 	startIdx := 0
 	if m.workflowCursor >= listH {
 		startIdx = m.workflowCursor - listH + 1
 	}
-	endIdx := min(startIdx+listH, len(m.workflowList))
+	endIdx := min(startIdx+listH, totalItems)
+
+	// Branch display text
+	branchDisplay := "all branches"
+	if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+		branchDisplay = m.availableBranches[m.branchIdx]
+	}
 
 	for i := startIdx; i < endIdx; i++ {
-		e := m.workflowList[i]
-		selected := i == m.workflowCursor
-
-		var text string
-		if e.indent {
-			// branch row: "  branchname" padded to width-2
-			text = fmt.Sprintf("%-*s", width-2, "  "+gh.TruncateString(e.branch, width-4))
+		if i == 0 {
+			// Branch cell (position 0)
+			selected := m.workflowCursor == 0
+			text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(branchDisplay, width-2))
+			var row string
+			switch {
+			case selected && active:
+				row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(text)
+			case selected:
+				row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(text)
+			default:
+				row = m.styles.Branch.Render(text)
+			}
+			rows = append(rows, row)
 		} else {
-			text = fmt.Sprintf("%-*s", width-2, gh.TruncateString(e.displayName(), width-2))
+			// Workflow row: i maps to workflows[i-1]
+			wfName := m.workflows[i-1]
+			selected := i == m.workflowCursor
+			text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(wfName, width-2))
+			var row string
+			switch {
+			case selected && active:
+				row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(text)
+			case selected:
+				row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(text)
+			default:
+				row = m.styles.Normal.Render(text)
+			}
+			rows = append(rows, row)
 		}
-
-		var row string
-		switch {
-		case selected && active:
-			row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(text)
-		case selected:
-			row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(text)
-		case e.indent && e.branch == m.defaultBranch:
-			// default branch gets branch color to distinguish it
-			row = m.styles.Branch.Render(text)
-		default:
-			row = m.styles.Normal.Render(text)
-		}
-		rows = append(rows, row)
 	}
 
 	if filenameStr != "" {
@@ -163,7 +169,7 @@ func renderList(m Model, width, height int) string {
 		colWorkflow, "WORKFLOW",
 		colBranch, "BRANCH",
 		colNum, "RUN",
-		colDur, "DURATION",
+		colDur, "TIME",
 	)
 	rows := []string{headerStyle.Render(header)}
 
@@ -283,6 +289,12 @@ func renderHelpBar(m Model, width int) string {
 			m.styles.HelpKey.Render("esc") + " " + m.styles.HelpDesc.Render("cancel")
 	}
 
+	if m.dispatchConfirming {
+		return m.styles.Normal.Render("dispatch "+m.dispatchFile+" on "+m.dispatchRef+"?") + "  " +
+			m.styles.HelpKey.Render("y") + " " + m.styles.HelpDesc.Render("yes") + "  " +
+			m.styles.HelpKey.Render("esc") + " " + m.styles.HelpDesc.Render("cancel")
+	}
+
 	if m.searching {
 		prompt := m.styles.HelpKey.Render("/") + " " + m.textInput.View()
 		esc := m.styles.Dimmed.Render("esc to cancel")
@@ -304,10 +316,21 @@ func renderHelpBar(m Model, width int) string {
 	}
 	if m.activePanel == 2 {
 		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("logs"))
+	} else if m.activePanel == 0 && m.workflowCursor == 0 {
+		items = append(items, m.styles.HelpKey.Render("↵")+" "+m.styles.HelpDesc.Render("branch"))
 	}
 	items = append(items,
 		m.styles.HelpKey.Render("r")+" "+m.styles.HelpDesc.Render("rerun"),
 		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),
+	)
+	if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		if wfName := m.workflows[m.workflowCursor-1]; wfName != "all" {
+			if _, ok := m.workflowFiles[wfName]; ok {
+				items = append(items, m.styles.HelpKey.Render("d")+" "+m.styles.HelpDesc.Render("dispatch"))
+			}
+		}
+	}
+	items = append(items,
 		m.styles.HelpKey.Render("o")+" "+m.styles.HelpDesc.Render("open"),
 		m.styles.HelpKey.Render("/")+" "+m.styles.HelpDesc.Render("search"),
 		m.styles.HelpKey.Render("q")+" "+m.styles.HelpDesc.Render("quit"),

@@ -84,21 +84,12 @@ func (c *Client) CancelWorkflow(repo string, runID int64) error {
 	return err
 }
 
-// GetWorkflowFilename fetches the filename (e.g. "fast.yaml") for a workflow ID
-func (c *Client) GetWorkflowFilename(repo string, workflowID int64) (string, error) {
-	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%d", repo, workflowID)
-	output, err := c.apiCall("GET", endpoint)
-	if err != nil {
-		return "", err
-	}
-	var wf struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(output, &wf); err != nil {
-		return "", err
-	}
-	parts := strings.Split(wf.Path, "/")
-	return parts[len(parts)-1], nil
+// DispatchWorkflow triggers a workflow_dispatch event on the given ref.
+// workflowFile is the filename, e.g. "fast.yaml".
+func (c *Client) DispatchWorkflow(repo, workflowFile, ref string) error {
+	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", repo, workflowFile)
+	_, err := c.apiCall("POST", endpoint, "-f", "ref="+ref)
+	return err
 }
 
 // OpenInBrowser opens a URL in the default browser
