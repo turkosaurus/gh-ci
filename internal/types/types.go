@@ -12,7 +12,7 @@ type WorkflowRun struct {
 	Status       string    `json:"status"`       // queued, in_progress, completed
 	Conclusion   string    `json:"conclusion"`   // success, failure, cancelled, skipped, etc.
 	WorkflowID   int64     `json:"workflow_id"`
-	Path         string    `json:"path"`           // e.g. ".github/workflows/fast.yaml"
+	Path         string    `json:"path"`           // e.g. ".github/workflows/ci.yaml"
 	RunNumber    int       `json:"run_number"`
 	RunAttempt   int       `json:"run_attempt"`
 	HTMLURL      string    `json:"html_url"`
@@ -68,7 +68,7 @@ type JobsResponse struct {
 // WorkflowDef is a locally-discovered workflow file (may have no runs yet)
 type WorkflowDef struct {
 	Name string // from the "name:" YAML field; falls back to filename sans extension
-	File string // e.g. "fast.yaml"
+	File string // e.g. "ci.yaml"
 }
 
 // StatusFilter represents the filter options for workflow run status

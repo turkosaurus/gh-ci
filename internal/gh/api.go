@@ -85,11 +85,22 @@ func (c *Client) CancelWorkflow(repo string, runID int64) error {
 }
 
 // DispatchWorkflow triggers a workflow_dispatch event on the given ref.
-// workflowFile is the filename, e.g. "fast.yaml".
+// workflowFile is the filename, e.g. "ci.yaml".
 func (c *Client) DispatchWorkflow(repo, workflowFile, ref string) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", repo, workflowFile)
 	_, err := c.apiCall("POST", endpoint, "-f", "ref="+ref)
-	return err
+	if err != nil {
+		msg := err.Error()
+		lower := strings.ToLower(msg)
+		if strings.Contains(lower, "404") ||
+			strings.Contains(lower, "not found") ||
+			strings.Contains(lower, "no workflow") ||
+			strings.Contains(lower, "could not find") {
+			return fmt.Errorf("%s\nhint: workflow file must exist on the default branch to be dispatched", msg)
+		}
+		return err
+	}
+	return nil
 }
 
 // OpenInBrowser opens a URL in the default browser

@@ -118,7 +118,7 @@ func renderWorkflows(m Model, width, height int) string {
 	var filenameStr string
 	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 		wfName := m.workflows[m.workflowCursor-1]
-		if wfName != "all" {
+		if wfName != workflowAll {
 			filenameStr = m.workflowFiles[wfName]
 		}
 	}
@@ -354,7 +354,7 @@ func renderHelpBar(m Model, width int) string {
 		m.styles.HelpKey.Render("c")+" "+m.styles.HelpDesc.Render("cancel"),
 	)
 	if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
-		if wfName := m.workflows[m.workflowCursor-1]; wfName != "all" {
+		if wfName := m.workflows[m.workflowCursor-1]; wfName != workflowAll {
 			if _, ok := m.workflowFiles[wfName]; ok {
 				items = append(items, m.styles.HelpKey.Render("d")+" "+m.styles.HelpDesc.Render("dispatch"))
 			}

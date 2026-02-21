@@ -27,6 +27,9 @@ const (
 	ScreenLogs
 )
 
+// workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
+const workflowAll = "all"
+
 type Model struct {
 	config *config.Config
 	client *gh.Client
@@ -39,8 +42,8 @@ type Model struct {
 	// data
 	allRuns          []types.WorkflowRun
 	filteredRuns     []types.WorkflowRun
-	workflows        []string // flat: ["all", "fast", "slow"]
-	availableBranches []string // ["", "main", "feat/x", ...] — "" = all branches
+	workflows        []string // flat: [workflowAll, "ci", "release", ...]
+	availableBranches []string // sorted real branch names, e.g. ["main", "feat/x"]
 	branchIdx        int      // index into availableBranches; 0 = all branches
 	jobs             []types.Job
 	logs         string
@@ -49,7 +52,7 @@ type Model struct {
 	// local workflow definitions discovered from .github/workflows/
 	localDefs []types.WorkflowDef
 
-	// workflow filename cache: workflow name → filename (e.g. "fast" → "fast.yaml")
+	// workflow filename cache: workflow name → filename (e.g. "ci" → "ci.yaml")
 	workflowFiles map[string]string
 
 	// dispatch confirmation state
@@ -274,7 +277,7 @@ func clearMsg() tea.Cmd {
 	})
 }
 
-// deriveWorkflows collects unique workflow names (sorted, prefixed with "all")
+// deriveWorkflows collects unique workflow names (sorted, prefixed with workflowAll)
 // and unique branch names (sorted, no sentinel — all entries are real branches).
 // localDefs are merged in so workflows with no runs still appear.
 func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (workflows []string, branches []string) {
@@ -291,7 +294,7 @@ func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (w
 		workflows = append(workflows, w)
 	}
 	sort.Strings(workflows)
-	workflows = append([]string{"all"}, workflows...)
+	workflows = append([]string{workflowAll}, workflows...)
 
 	for b := range brSeen {
 		branches = append(branches, b)
@@ -360,7 +363,7 @@ func (m *Model) applyFilter() {
 		workflows = append(workflows, w)
 	}
 	sort.Strings(workflows)
-	workflows = append([]string{"all"}, workflows...)
+	workflows = append([]string{workflowAll}, workflows...)
 	// Preserve workflowCursor by name across re-derives
 	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 		prevWf := m.workflows[m.workflowCursor-1]
@@ -380,7 +383,7 @@ func (m *Model) applyFilter() {
 	runs = branchRuns
 	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 		wfName := m.workflows[m.workflowCursor-1]
-		if wfName != "all" {
+		if wfName != workflowAll {
 			var wf []types.WorkflowRun
 			for _, r := range runs {
 				if r.Name == wfName {
@@ -756,8 +759,8 @@ func (m Model) openURL() string {
 		if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 			wfName = m.workflows[m.workflowCursor-1]
 		}
-		if wfName == "" || wfName == "all" {
-			// branch cell or "all" — open repo actions page
+		if wfName == "" || wfName == workflowAll {
+			// branch cell or "all workflows" — open repo actions page
 			if run := m.selectedRun(); run != nil {
 				return run.Repository.HTMLURL + "/actions"
 			}
@@ -857,7 +860,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Dispatch):
 		if m.activePanel == 0 && m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
 			wfName := m.workflows[m.workflowCursor-1]
-			if wfName != "all" {
+			if wfName != workflowAll {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
 					m.dispatchFile = file
