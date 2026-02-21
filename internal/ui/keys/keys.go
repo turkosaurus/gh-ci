@@ -12,7 +12,6 @@ type KeyMap struct {
 	Dispatch     key.Binding
 	Logs         key.Binding
 	Open         key.Binding
-	Filter       key.Binding
 	Refresh      key.Binding
 	Help         key.Binding
 	Quit         key.Binding
@@ -59,10 +58,6 @@ func DefaultKeyMap() KeyMap {
 		Open: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),
-		),
-		Filter: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
 		),
 		Refresh: key.NewBinding(
 			key.WithKeys("R"),
@@ -118,6 +113,6 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		{k.Up, k.Down, k.PageUp, k.PageDown},
 		{k.Enter, k.Logs, k.Open, k.Back},
 		{k.Rerun, k.Cancel, k.Dispatch, k.Refresh},
-		{k.Filter, k.Help, k.Quit},
+		{k.Help, k.Quit},
 	}
 }

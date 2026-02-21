@@ -30,6 +30,74 @@ const (
 // workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
 const workflowAll = "*"
 
+// logContextLine is one display row in the context-window log view.
+type logContextLine struct {
+	lineNo  int    // 1-based original line number; 0 = blank separator
+	text    string
+	isMatch bool
+}
+
+// fuzzyMatch returns true if every character of query appears in order in line (case-insensitive).
+func fuzzyMatch(line, query string) bool {
+	line = strings.ToLower(line)
+	query = strings.ToLower(query)
+	qi := 0
+	for _, ch := range line {
+		if qi < len(query) && ch == rune(query[qi]) {
+			qi++
+		}
+	}
+	return qi == len(query)
+}
+
+// buildLogContext produces a grep -C ctx style context-window view.
+// Returns the flat row list and, for each match group, the row offset where it starts.
+func buildLogContext(lines []string, query string, ctx int) (rows []logContextLine, groupOffsets []int) {
+	// collect matching line indices
+	var matches []int
+	for i, l := range lines {
+		if fuzzyMatch(l, query) {
+			matches = append(matches, i)
+		}
+	}
+	if len(matches) == 0 {
+		return
+	}
+
+	// merge overlapping windows and emit rows
+	prevEnd := -1
+	for _, mIdx := range matches {
+		start := max(0, mIdx-ctx)
+		end := min(len(lines)-1, mIdx+ctx)
+
+		if start > prevEnd+1 {
+			// new non-adjacent group
+			if prevEnd >= 0 {
+				rows = append(rows, logContextLine{}) // blank separator
+			}
+			groupOffsets = append(groupOffsets, len(rows))
+			for i := start; i <= end; i++ {
+				rows = append(rows, logContextLine{lineNo: i + 1, text: lines[i], isMatch: i == mIdx})
+			}
+		} else {
+			// overlapping with previous group: extend (this match is another hit inside same window)
+			// mark the match line itself if it wasn't already included
+			for i := prevEnd + 1; i <= end; i++ {
+				rows = append(rows, logContextLine{lineNo: i + 1, text: lines[i], isMatch: i == mIdx})
+			}
+			// also mark already-emitted rows that happen to be this match
+			for j := range rows {
+				if rows[j].lineNo == mIdx+1 {
+					rows[j].isMatch = true
+					break
+				}
+			}
+		}
+		prevEnd = end
+	}
+	return
+}
+
 type Model struct {
 	config *config.Config
 	client *gh.Client
@@ -67,10 +135,13 @@ type Model struct {
 	jobCursor      int
 	logOffset      int
 
-	// search
-	searchQuery string
-	searching   bool
-	textInput   textinput.Model
+	// log search
+	logQuery        string
+	logSearching    bool
+	logContextLines []logContextLine
+	logMatchGroups  []int // row offsets of each match group in logContextLines
+	logMatchIdx     int   // current group for n/p navigation
+	textInput       textinput.Model // log search input
 
 	// branch selection
 	branchSelecting        bool
@@ -160,8 +231,8 @@ func scanLocalWorkflows() []types.WorkflowDef {
 
 func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
-	ti.Placeholder = "search..."
-	ti.CharLimit = 50
+	ti.Placeholder = "search logs..."
+	ti.CharLimit = 100
 	bi := textinput.New()
 	bi.Placeholder = "filter branches..."
 	bi.CharLimit = 100
@@ -394,7 +465,7 @@ func (m *Model) applyFilter() {
 		}
 	}
 
-	m.filteredRuns = filterRuns(runs, m.searchQuery)
+	m.filteredRuns = runs
 	if m.cursor >= len(m.filteredRuns) {
 		m.cursor = max(0, len(m.filteredRuns)-1)
 	}
@@ -407,21 +478,6 @@ func (m Model) selectedRun() *types.WorkflowRun {
 	return nil
 }
 
-func filterRuns(runs []types.WorkflowRun, query string) []types.WorkflowRun {
-	if query == "" {
-		return runs
-	}
-	q := strings.ToLower(query)
-	var out []types.WorkflowRun
-	for _, r := range runs {
-		if strings.Contains(strings.ToLower(r.Name), q) ||
-			strings.Contains(strings.ToLower(r.HeadBranch), q) ||
-			strings.Contains(strings.ToLower(r.Repository.FullName), q) {
-			out = append(out, r)
-		}
-	}
-	return out
-}
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
@@ -434,9 +490,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		if m.branchSelecting {
 			return m.handleBranchSelect(msg)
-		}
-		if m.searching {
-			return m.handleSearch(msg)
 		}
 		if m.dispatchConfirming {
 			return m.handleDispatchConfirm(msg)
@@ -563,23 +616,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, tea.Batch(cmds...)
 }
 
-func (m Model) handleSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.Type {
-	case tea.KeyEscape:
-		m.searching = false
-		m.textInput.Blur()
-		return m, nil
-	case tea.KeyEnter:
-		m.searchQuery = m.textInput.Value()
-		m.searching = false
-		m.textInput.Blur()
-		m.applyFilter()
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
-}
 
 func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
@@ -873,16 +909,10 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-	case key.Matches(msg, m.keys.Filter):
-		m.searching = true
-		m.textInput.SetValue(m.searchQuery)
-		m.textInput.Focus()
-		return m, textinput.Blink
-
 	case key.Matches(msg, m.keys.Back):
-		m.searchQuery = ""
-		m.textInput.SetValue("")
-		m.applyFilter()
+		if m.activePanel > 0 {
+			m.activePanel--
+		}
 
 	case key.Matches(msg, m.keys.Refresh):
 		m.message = "refreshing..."
@@ -892,8 +922,44 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m Model) handleLogSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.logSearching = false
+		m.textInput.Blur()
+		return m, nil
+	case tea.KeyEnter:
+		m.logQuery = m.textInput.Value()
+		m.logSearching = false
+		m.textInput.Blur()
+		m.logOffset = 0
+		m.logMatchIdx = 0
+		if m.logQuery != "" {
+			lines := strings.Split(m.logs, "\n")
+			m.logContextLines, m.logMatchGroups = buildLogContext(lines, m.logQuery, 3)
+		} else {
+			m.logContextLines = nil
+			m.logMatchGroups = nil
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
 func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	logLines := strings.Split(m.logs, "\n")
+	if m.logSearching {
+		return m.handleLogSearch(msg)
+	}
+
+	// Use context lines when a query is active, otherwise raw log lines.
+	var displayLen int
+	if m.logQuery != "" {
+		displayLen = len(m.logContextLines)
+	} else {
+		displayLen = len(strings.Split(m.logs, "\n"))
+	}
 	visibleLines := m.height - 4
 
 	switch {
@@ -902,6 +968,29 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Back), msg.String() == "h", msg.Type == tea.KeyBackspace:
 		m.screen = ScreenMain
+		m.logQuery = ""
+		m.logSearching = false
+		m.logContextLines = nil
+		m.logMatchGroups = nil
+		m.logMatchIdx = 0
+
+	case msg.String() == "/":
+		m.logSearching = true
+		m.textInput.SetValue("")
+		m.textInput.Focus()
+		return m, textinput.Blink
+
+	case msg.String() == "n":
+		if m.logQuery != "" && m.logMatchIdx < len(m.logMatchGroups)-1 {
+			m.logMatchIdx++
+			m.logOffset = m.logMatchGroups[m.logMatchIdx]
+		}
+
+	case msg.String() == "p":
+		if m.logQuery != "" && m.logMatchIdx > 0 {
+			m.logMatchIdx--
+			m.logOffset = m.logMatchGroups[m.logMatchIdx]
+		}
 
 	case key.Matches(msg, m.keys.Up):
 		if m.logOffset > 0 {
@@ -909,7 +998,7 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case key.Matches(msg, m.keys.Down):
-		if maxOffset := len(logLines) - visibleLines; m.logOffset < maxOffset {
+		if maxOffset := displayLen - visibleLines; m.logOffset < maxOffset {
 			m.logOffset++
 		}
 
@@ -917,19 +1006,19 @@ func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.logOffset = max(0, m.logOffset-visibleLines)
 
 	case key.Matches(msg, m.keys.PageDown):
-		m.logOffset = min(max(0, len(logLines)-visibleLines), m.logOffset+visibleLines)
+		m.logOffset = min(max(0, displayLen-visibleLines), m.logOffset+visibleLines)
 
 	case key.Matches(msg, m.keys.HalfPageUp):
 		m.logOffset = max(0, m.logOffset-visibleLines/2)
 
 	case key.Matches(msg, m.keys.HalfPageDown):
-		m.logOffset = min(max(0, len(logLines)-visibleLines), m.logOffset+visibleLines/2)
+		m.logOffset = min(max(0, displayLen-visibleLines), m.logOffset+visibleLines/2)
 
 	case key.Matches(msg, m.keys.Top):
 		m.logOffset = 0
 
 	case key.Matches(msg, m.keys.Bottom):
-		m.logOffset = max(0, len(logLines)-visibleLines)
+		m.logOffset = max(0, displayLen-visibleLines)
 	}
 
 	return m, nil

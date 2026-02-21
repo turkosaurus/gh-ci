@@ -211,9 +211,6 @@ func renderList(m Model, width, height int) string {
 	active := m.activePanel == 1
 
 	if len(m.filteredRuns) == 0 {
-		if m.searchQuery != "" {
-			return m.styles.Dimmed.Render("no runs match filter")
-		}
 		return m.styles.Dimmed.Render("no workflow runs")
 	}
 
@@ -312,7 +309,7 @@ func renderDetail(m Model, width int) string {
 	if active {
 		headerStyle = headerStyle.Foreground(styles.ColorPurple)
 	}
-	sb.WriteString(headerStyle.Render(fmt.Sprintf("Run #%d: %s", run.RunNumber, gh.TruncateString(run.Name, width-10))))
+	sb.WriteString(headerStyle.Render(fmt.Sprintf("[#%d] %s", run.RunNumber, gh.TruncateString(run.Name, width-10))))
 	sb.WriteString("\n\n")
 
 	field := func(label, value string) {
@@ -384,16 +381,6 @@ func renderHelpBar(m Model, width int) string {
 		return m.styles.Dimmed.Render("↑/↓ navigate  ↵ confirm  esc cancel")
 	}
 
-	if m.searching {
-		prompt := m.styles.HelpKey.Render("/") + " " + m.textInput.View()
-		esc := m.styles.Dimmed.Render("esc to cancel")
-		gap := width - lipgloss.Width(prompt) - lipgloss.Width(esc) - 2
-		if gap < 1 {
-			gap = 1
-		}
-		return prompt + strings.Repeat(" ", gap) + esc
-	}
-
 	if m.message != "" {
 		return m.styles.Dimmed.Render(m.message)
 	}
@@ -412,7 +399,6 @@ func renderHelpBar(m Model, width int) string {
 	}
 	items = append(items,
 		m.styles.HelpKey.Render("o")+" "+m.styles.HelpDesc.Render("open"),
-		m.styles.HelpKey.Render("/")+" "+m.styles.HelpDesc.Render("search"),
 		m.styles.HelpKey.Render("q")+" "+m.styles.HelpDesc.Render("quit"),
 	)
 	return m.styles.Dimmed.Render(strings.Join(items, "  "))
@@ -427,46 +413,113 @@ func renderLogs(m Model) string {
 		h = 24
 	}
 
-	logLines := strings.Split(m.logs, "\n")
 	visibleLines := h - 4
-
-	end := min(m.logOffset+visibleLines, len(logLines))
-	scrollInfo := fmt.Sprintf("%d-%d / %d", m.logOffset+1, end, len(logLines))
-	header := fmt.Sprintf("Logs: %s", m.logJobName)
-	hGap := w - len(header) - len(scrollInfo) - 2
-	if hGap < 1 {
-		hGap = 1
-	}
-
-	var sb strings.Builder
-	sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
-		Render(header + strings.Repeat(" ", hGap) + scrollInfo))
-	sb.WriteString("\n\n")
-
 	maxLineW := w - 8
 	if maxLineW < 40 {
 		maxLineW = 40
 	}
-	for i := m.logOffset; i < end; i++ {
-		line := logLines[i]
-		if len(line) > maxLineW {
-			line = line[:maxLineW-3] + "..."
+
+	var sb strings.Builder
+
+	if m.logQuery != "" && len(m.logContextLines) > 0 {
+		// ── context-window mode ──────────────────────────────────────────────
+		total := len(m.logContextLines)
+		end := min(m.logOffset+visibleLines, total)
+		scrollInfo := fmt.Sprintf("%d-%d / %d", m.logOffset+1, end, total)
+		matchInfo := fmt.Sprintf("[/%s  match %d/%d]", m.logQuery, m.logMatchIdx+1, len(m.logMatchGroups))
+		header := fmt.Sprintf("Logs: %s  %s", m.logJobName, m.styles.Dimmed.Render(matchInfo))
+		hGap := w - lipgloss.Width(header) - len(scrollInfo) - 2
+		if hGap < 1 {
+			hGap = 1
 		}
-		sb.WriteString(m.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", i+1)))
-		sb.WriteString(m.styles.LogLine.Render(line))
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+			Render("Logs: "+m.logJobName) + "  " + m.styles.Dimmed.Render(matchInfo) +
+			strings.Repeat(" ", hGap) + m.styles.Dimmed.Render(scrollInfo))
+		sb.WriteString("\n\n")
+
+		for i := m.logOffset; i < end; i++ {
+			cl := m.logContextLines[i]
+			if cl.lineNo == 0 {
+				sb.WriteString("\n")
+				continue
+			}
+			text := cl.text
+			if len(text) > maxLineW {
+				text = text[:maxLineW-3] + "..."
+			}
+			numStr := m.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", cl.lineNo))
+			if cl.isMatch {
+				sb.WriteString(numStr)
+				sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorYellow).Render(text))
+			} else {
+				sb.WriteString(numStr)
+				sb.WriteString(m.styles.Dimmed.Render(text))
+			}
+			sb.WriteString("\n")
+		}
+	} else if m.logQuery != "" {
+		// query active but no matches
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+			Render("Logs: " + m.logJobName))
+		sb.WriteString("\n\n")
+		sb.WriteString(m.styles.Dimmed.Render(fmt.Sprintf("no matches for /%s", m.logQuery)))
 		sb.WriteString("\n")
+	} else {
+		// ── normal (no filter) mode ──────────────────────────────────────────
+		logLines := strings.Split(m.logs, "\n")
+		end := min(m.logOffset+visibleLines, len(logLines))
+		scrollInfo := fmt.Sprintf("%d-%d / %d", m.logOffset+1, end, len(logLines))
+		header := fmt.Sprintf("Logs: %s", m.logJobName)
+		hGap := w - len(header) - len(scrollInfo) - 2
+		if hGap < 1 {
+			hGap = 1
+		}
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+			Render(header + strings.Repeat(" ", hGap) + scrollInfo))
+		sb.WriteString("\n\n")
+
+		for i := m.logOffset; i < end; i++ {
+			line := logLines[i]
+			if len(line) > maxLineW {
+				line = line[:maxLineW-3] + "..."
+			}
+			sb.WriteString(m.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", i+1)))
+			sb.WriteString(m.styles.LogLine.Render(line))
+			sb.WriteString("\n")
+		}
 	}
 
 	sb.WriteString("\n")
-	helpItems := []string{
-		m.styles.HelpKey.Render("↑/k") + " " + m.styles.HelpDesc.Render("up"),
-		m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
-		m.styles.HelpKey.Render("g/G") + " " + m.styles.HelpDesc.Render("top/bottom"),
-		m.styles.HelpKey.Render("ctrl+u/d") + " " + m.styles.HelpDesc.Render("½ page"),
-		m.styles.HelpKey.Render("h/esc/⌫") + " " + m.styles.HelpDesc.Render("back"),
-		m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
+	if m.logSearching {
+		prompt := m.styles.HelpKey.Render("/") + " " + m.textInput.View()
+		esc := m.styles.Dimmed.Render("esc to cancel")
+		gap := w - lipgloss.Width(prompt) - lipgloss.Width(esc) - 2
+		if gap < 1 {
+			gap = 1
+		}
+		sb.WriteString(prompt + strings.Repeat(" ", gap) + esc)
+	} else if m.logQuery != "" {
+		helpItems := []string{
+			m.styles.HelpKey.Render("n") + " " + m.styles.HelpDesc.Render("next"),
+			m.styles.HelpKey.Render("p") + " " + m.styles.HelpDesc.Render("prev"),
+			m.styles.HelpKey.Render("↑/↓") + " " + m.styles.HelpDesc.Render("scroll"),
+			m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("new search"),
+			m.styles.HelpKey.Render("h/esc") + " " + m.styles.HelpDesc.Render("back"),
+			m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
+		}
+		sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
+	} else {
+		helpItems := []string{
+			m.styles.HelpKey.Render("↑/k") + " " + m.styles.HelpDesc.Render("up"),
+			m.styles.HelpKey.Render("↓/j") + " " + m.styles.HelpDesc.Render("down"),
+			m.styles.HelpKey.Render("g/G") + " " + m.styles.HelpDesc.Render("top/bottom"),
+			m.styles.HelpKey.Render("ctrl+u/d") + " " + m.styles.HelpDesc.Render("½ page"),
+			m.styles.HelpKey.Render("/") + " " + m.styles.HelpDesc.Render("search"),
+			m.styles.HelpKey.Render("h/esc/⌫") + " " + m.styles.HelpDesc.Render("back"),
+			m.styles.HelpKey.Render("q") + " " + m.styles.HelpDesc.Render("quit"),
+		}
+		sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 	}
-	sb.WriteString(m.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 
 	return sb.String()
 }
