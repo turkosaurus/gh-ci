@@ -4,21 +4,21 @@ import "time"
 
 // WorkflowRun represents a GitHub Actions workflow run
 type WorkflowRun struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	DisplayTitle string    `json:"display_title"`
-	HeadBranch   string    `json:"head_branch"`
-	HeadSHA      string    `json:"head_sha"`
-	Status       string    `json:"status"`       // queued, in_progress, completed
-	Conclusion   string    `json:"conclusion"`   // success, failure, cancelled, skipped, etc.
-	WorkflowID   int64     `json:"workflow_id"`
-	Path         string    `json:"path"`           // e.g. ".github/workflows/ci.yaml"
-	RunNumber    int       `json:"run_number"`
-	RunAttempt   int       `json:"run_attempt"`
-	HTMLURL      string    `json:"html_url"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
-	RunStartedAt time.Time `json:"run_started_at"`
+	ID           int64      `json:"id"`
+	Name         string     `json:"name"`
+	DisplayTitle string     `json:"display_title"`
+	HeadBranch   string     `json:"head_branch"`
+	HeadSHA      string     `json:"head_sha"`
+	Status       string     `json:"status"`     // queued, in_progress, completed
+	Conclusion   string     `json:"conclusion"` // success, failure, cancelled, skipped, etc.
+	WorkflowID   int64      `json:"workflow_id"`
+	Path         string     `json:"path"` // e.g. ".github/workflows/ci.yaml"
+	RunNumber    int        `json:"run_number"`
+	RunAttempt   int        `json:"run_attempt"`
+	HTMLURL      string     `json:"html_url"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+	RunStartedAt time.Time  `json:"run_started_at"`
 	Repository   Repository `json:"repository"`
 }
 

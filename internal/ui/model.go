@@ -28,7 +28,7 @@ const (
 )
 
 // workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
-const workflowAll = "all"
+const workflowAll = "*"
 
 type Model struct {
 	config *config.Config
@@ -40,14 +40,14 @@ type Model struct {
 	activePanel int // 0=workflows, 1=runs, 2=detail
 
 	// data
-	allRuns          []types.WorkflowRun
-	filteredRuns     []types.WorkflowRun
-	workflows        []string // flat: [workflowAll, "ci", "release", ...]
+	allRuns           []types.WorkflowRun
+	filteredRuns      []types.WorkflowRun
+	workflows         []string // flat: [workflowAll, "ci", "release", ...]
 	availableBranches []string // sorted real branch names, e.g. ["main", "feat/x"]
-	branchIdx        int      // index into availableBranches; 0 = all branches
-	jobs             []types.Job
-	logs         string
-	logJobName   string
+	branchIdx         int      // index into availableBranches; 0 = all branches
+	jobs              []types.Job
+	logs              string
+	logJobName        string
 
 	// local workflow definitions discovered from .github/workflows/
 	localDefs []types.WorkflowDef
@@ -117,7 +117,6 @@ type (
 	}
 	tickMsg     time.Time
 	clearMsgMsg struct{}
-
 )
 
 func currentGitBranch() string {
@@ -177,7 +176,7 @@ func NewModel(cfg *config.Config) Model {
 		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
 		localDefs:      scanLocalWorkflows(),
 		workflowFiles:  make(map[string]string),
-		defaultBranch:  cfg.DefaultBranch,
+		defaultBranch:  cfg.DefaultPrimaryBranch,
 		localBranch:    currentGitBranch(),
 	}
 }
@@ -258,7 +257,6 @@ func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
 		return dispatchResultMsg{message: "dispatched " + file + " on " + ref}
 	}
 }
-
 
 func (m Model) repoForWorkflow(name string) string {
 	for _, r := range m.allRuns {
@@ -606,6 +604,7 @@ func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.branchSelecting = false
 		m.branchInput.Blur()
+		m.workflowCursor = 1 // land on workflowAll so next Enter goes right, not re-opens selector
 		m.applyFilter()
 		m.cursor = 0
 		return m, nil
@@ -627,7 +626,6 @@ func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 }
-
 
 func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {

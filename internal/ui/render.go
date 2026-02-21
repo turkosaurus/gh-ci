@@ -29,7 +29,7 @@ func renderMain(m Model) string {
 		h = 24
 	}
 
-	bodyH := h - 2 // title + help
+	bodyH := h - 3 // title + panel-headers + help
 
 	const workflowW = 22
 	const maxDetailW = 40
@@ -50,6 +50,7 @@ func renderMain(m Model) string {
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderTitle(m, w),
+		renderPanelHeaders(m, workflowW, runsW, detailW),
 		body,
 		renderHelpBar(m, w),
 	)
@@ -58,6 +59,27 @@ func renderMain(m Model) string {
 func renderTitle(m Model, width int) string {
 	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
 		Render("GitHub Actions Dashboard")
+}
+
+func renderPanelHeaders(m Model, workflowW, runsW, detailW int) string {
+	sep := lipgloss.NewStyle().Background(styles.ColorBgLight).Foreground(styles.ColorSubtle).Render("│")
+	label := func(panel int, text string, w int) string {
+		if m.activePanel == panel {
+			return lipgloss.NewStyle().Width(w).Bold(true).
+				Background(styles.ColorPurple).Foreground(styles.ColorBg).
+				Render(text)
+		}
+		return lipgloss.NewStyle().Width(w).
+			Background(styles.ColorBgLight).Foreground(styles.ColorWhite).
+			Render(text)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		label(0, "WORKFLOW", workflowW),
+		sep,
+		label(1, "RUNS", runsW),
+		sep,
+		label(2, "DETAIL", detailW),
+	)
 }
 
 func renderWorkflows(m Model, width, height int) string {
@@ -114,8 +136,8 @@ func renderWorkflows(m Model, width, height int) string {
 	// Separator
 	rows = append(rows, m.styles.Dimmed.Render(strings.Repeat("─", width-1)))
 
-	// ── WORKFLOW section ─────────────────────────────────────────────────────
-	rows = append(rows, headerStyle.Render("WORKFLOW"))
+	// ── NAME section ─────────────────────────────────────────────────────────
+	rows = append(rows, headerStyle.Render("NAME"))
 
 	if len(m.workflows) == 0 {
 		rows = append(rows, m.styles.Dimmed.Render("loading..."))
@@ -188,8 +210,8 @@ func renderList(m Model, width, height int) string {
 		return m.styles.Dimmed.Render("no workflow runs")
 	}
 
-	const colSt, colNum, colDur, colFile, colDispatched = 2, 6, 9, 14, 16
-	colWorkflow := width - colSt - 1 - colNum - colDur - colFile - colDispatched - 8
+	const colOk, colNum, colDur, colFile, colDispatched = 2, 6, 7, 14, 16
+	colWorkflow := width - colOk - colNum - colDur - colFile - colDispatched - 10
 	if colWorkflow < 10 {
 		colWorkflow = 10
 	}
@@ -198,12 +220,13 @@ func renderList(m Model, width, height int) string {
 	if active {
 		headerStyle = headerStyle.Foreground(styles.ColorPurple)
 	}
-	header := fmt.Sprintf("%-*s   %-*s  %-*s  %*s  %-*s",
+	header := fmt.Sprintf("%-*s  %-*s  %-*s  %*s  %-*s  %-*s",
 		colDispatched, "DISPATCHED",
-		colWorkflow, "WORKFLOW",
+		colWorkflow, "NAME",
 		colFile, "FILE",
 		colNum, "RUN",
 		colDur, "TIME",
+		colOk, "OK",
 	)
 	rows := []string{headerStyle.Render(header)}
 
@@ -216,7 +239,7 @@ func renderList(m Model, width, height int) string {
 
 	for i := startIdx; i < endIdx; i++ {
 		rows = append(rows, renderRunRow(m, m.filteredRuns[i], i == m.cursor, active,
-			colWorkflow, colFile, colNum, colDur, colDispatched))
+			width, colWorkflow, colFile, colNum, colDur, colDispatched, colOk))
 	}
 
 	if len(m.filteredRuns) > listH {
@@ -227,24 +250,45 @@ func renderList(m Model, width, height int) string {
 	return strings.Join(rows, "\n")
 }
 
-func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, colWorkflow, colFile, colNum, colDur, colDispatched int) string {
-	icon := styles.StatusIcon(run.Status, run.Conclusion)
-	st := m.styles.StatusStyle(run.Status, run.Conclusion).Render(icon)
-	workflow := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
-	file := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile)))
-	num := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
-	dur := m.styles.Duration.Render(fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds()))))
-	dispatched := m.styles.Dimmed.Render(fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006-01-02 15:04")))
+func renderRunRow(m Model, run types.WorkflowRun, selected, active bool, width, colWorkflow, colFile, colNum, colDur, colDispatched, colOk int) string {
+	icon  := styles.StatusIcon(run.Status, run.Conclusion)
+	iconS := fmt.Sprintf("%-*s", colOk, icon)
+	wfS   := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
+	fileS := fmt.Sprintf("%-*s", colFile, gh.TruncateString(m.workflowFiles[run.Name], colFile))
+	numS  := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
+	durS  := fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds())))
+	dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format("2006-01-02 15:04"))
 
-	row := dispatched + " " + st + " " + workflow + "  " + file + "  " + num + "  " + dur
-
-	switch {
-	case selected && active:
-		row = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).Render(row)
-	case selected:
-		row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(row)
+	if selected && active {
+		// Per-element styles with shared background so status/duration colors are preserved.
+		bg   := lipgloss.NewStyle().Background(styles.ColorBgLight)
+		sep  := bg.Render("  ")
+		disp := m.styles.Dimmed.Background(styles.ColorBgLight).Render(dispS)
+		wf   := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(wfS)
+		file := m.styles.Dimmed.Background(styles.ColorBgLight).Render(fileS)
+		num  := lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(numS)
+		dur  := m.styles.Duration.Background(styles.ColorBgLight).Render(durS)
+		st   := m.styles.StatusStyle(run.Status, run.Conclusion).Background(styles.ColorBgLight).Render(iconS)
+		row  := disp + sep + wf + sep + file + sep + num + sep + dur + sep + st
+		// pad remaining width with background so the bar extends to the edge
+		used := colDispatched + 2 + colWorkflow + 2 + colFile + 2 + colNum + 2 + colDur + 2 + colOk
+		if pad := width - used; pad > 0 {
+			row += bg.Render(strings.Repeat(" ", pad))
+		}
+		return row
 	}
-	return row
+
+	if selected {
+		plainRow := dispS + "  " + wfS + "  " + fileS + "  " + numS + "  " + durS + "  " + iconS
+		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(plainRow)
+	}
+
+	// normal: per-element styles
+	st   := m.styles.StatusStyle(run.Status, run.Conclusion).Render(iconS)
+	file := m.styles.Dimmed.Render(fileS)
+	dur  := m.styles.Duration.Render(durS)
+	disp := m.styles.Dimmed.Render(dispS)
+	return disp + "  " + wfS + "  " + file + "  " + numS + "  " + dur + "  " + st
 }
 
 func renderDetail(m Model, width int) string {
