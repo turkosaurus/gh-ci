@@ -56,34 +56,8 @@ func renderMain(m Model) string {
 }
 
 func renderTitle(m Model, width int) string {
-	title := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
 		Render("GitHub Actions Dashboard")
-
-	tabs := []struct {
-		f     types.StatusFilter
-		label string
-	}{
-		{types.StatusAll, "All"},
-		{types.StatusFailed, "Failed"},
-		{types.StatusInProgress, "Running"},
-		{types.StatusSuccess, "Success"},
-	}
-
-	var parts []string
-	for _, t := range tabs {
-		if t.f == m.filter {
-			parts = append(parts, m.styles.FilterActive.Render(t.label))
-		} else {
-			parts = append(parts, m.styles.Dimmed.Render(t.label))
-		}
-	}
-	filterBar := strings.Join(parts, " ")
-
-	gap := width - lipgloss.Width(title) - lipgloss.Width(filterBar) - 1
-	if gap < 1 {
-		gap = 1
-	}
-	return title + strings.Repeat(" ", gap) + filterBar
 }
 
 func renderWorkflows(m Model, width, height int) string {
@@ -129,7 +103,7 @@ func renderList(m Model, width, height int) string {
 	active := m.activePanel == 1
 
 	if len(m.filteredRuns) == 0 {
-		if m.searchQuery != "" || m.filter != types.StatusAll {
+		if m.searchQuery != "" {
 			return m.styles.Dimmed.Render("no runs match filter")
 		}
 		return m.styles.Dimmed.Render("no workflow runs")

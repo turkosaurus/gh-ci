@@ -22,7 +22,6 @@ type KeyMap struct {
 	HalfPageDown key.Binding
 	Top          key.Binding
 	Bottom       key.Binding
-	Tab          key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -99,10 +98,6 @@ func DefaultKeyMap() KeyMap {
 		Bottom: key.NewBinding(
 			key.WithKeys("G", "end"),
 			key.WithHelp("G", "bottom"),
-		),
-		Tab: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "next filter"),
 		),
 	}
 }

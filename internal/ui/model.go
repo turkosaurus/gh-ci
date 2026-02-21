@@ -45,8 +45,7 @@ type Model struct {
 	jobCursor      int
 	logOffset      int
 
-	// filter/search
-	filter      types.StatusFilter
+	// search
 	searchQuery string
 	searching   bool
 	textInput   textinput.Model
@@ -96,7 +95,6 @@ func NewModel(cfg *config.Config) Model {
 		client:    gh.NewClient(),
 		styles:    styles.DefaultStyles(),
 		keys:      keys.DefaultKeyMap(),
-		filter:    types.StatusAll,
 		textInput: ti,
 		loading:   true,
 	}
@@ -203,7 +201,7 @@ func (m *Model) applyFilter() {
 		runs = wfRuns
 	}
 
-	m.filteredRuns = filterRuns(runs, m.filter, m.searchQuery)
+	m.filteredRuns = filterRuns(runs, m.searchQuery)
 	if m.cursor >= len(m.filteredRuns) {
 		m.cursor = max(0, len(m.filteredRuns)-1)
 	}
@@ -216,38 +214,18 @@ func (m Model) selectedRun() *types.WorkflowRun {
 	return nil
 }
 
-func filterRuns(runs []types.WorkflowRun, filter types.StatusFilter, query string) []types.WorkflowRun {
-	if filter == types.StatusAll && query == "" {
+func filterRuns(runs []types.WorkflowRun, query string) []types.WorkflowRun {
+	if query == "" {
 		return runs
 	}
+	q := strings.ToLower(query)
 	var out []types.WorkflowRun
 	for _, r := range runs {
-		if filter != types.StatusAll {
-			status := r.GetStatus()
-			switch filter {
-			case types.StatusFailed:
-				if status != "failure" {
-					continue
-				}
-			case types.StatusSuccess:
-				if status != "success" {
-					continue
-				}
-			case types.StatusInProgress:
-				if r.Status != "in_progress" && r.Status != "queued" {
-					continue
-				}
-			}
+		if strings.Contains(strings.ToLower(r.Name), q) ||
+			strings.Contains(strings.ToLower(r.HeadBranch), q) ||
+			strings.Contains(strings.ToLower(r.Repository.FullName), q) {
+			out = append(out, r)
 		}
-		if query != "" {
-			q := strings.ToLower(query)
-			if !strings.Contains(strings.ToLower(r.Name), q) &&
-				!strings.Contains(strings.ToLower(r.HeadBranch), q) &&
-				!strings.Contains(strings.ToLower(r.Repository.FullName), q) {
-				continue
-			}
-		}
-		out = append(out, r)
 	}
 	return out
 }
@@ -528,21 +506,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.textInput.Focus()
 		return m, textinput.Blink
 
-	case key.Matches(msg, m.keys.Tab):
-		switch m.filter {
-		case types.StatusAll:
-			m.filter = types.StatusFailed
-		case types.StatusFailed:
-			m.filter = types.StatusInProgress
-		case types.StatusInProgress:
-			m.filter = types.StatusSuccess
-		case types.StatusSuccess:
-			m.filter = types.StatusAll
-		}
-		m.applyFilter()
-
 	case key.Matches(msg, m.keys.Back):
-		m.filter = types.StatusAll
 		m.searchQuery = ""
 		m.textInput.SetValue("")
 		m.applyFilter()
