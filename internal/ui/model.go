@@ -69,6 +69,11 @@ type Model struct {
 	searching   bool
 	textInput   textinput.Model
 
+	// branch selection
+	branchSelecting        bool
+	branchInput            textinput.Model
+	branchSuggestionCursor int
+
 	// layout
 	width  int
 	height int
@@ -154,12 +159,16 @@ func NewModel(cfg *config.Config) Model {
 	ti := textinput.New()
 	ti.Placeholder = "search..."
 	ti.CharLimit = 50
+	bi := textinput.New()
+	bi.Placeholder = "filter branches..."
+	bi.CharLimit = 100
 	return Model{
 		config:        cfg,
 		client:        gh.NewClient(),
 		styles:        styles.DefaultStyles(),
 		keys:          keys.DefaultKeyMap(),
 		textInput:     ti,
+		branchInput:   bi,
 		loading:       true,
 		localDefs:     scanLocalWorkflows(),
 		workflowFiles: make(map[string]string),
@@ -289,6 +298,28 @@ func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (w
 	return
 }
 
+func (m Model) filteredBranches() []string {
+	q := strings.ToLower(m.branchInput.Value())
+	var out []string
+	for _, b := range m.availableBranches {
+		display := b
+		if b == "" {
+			display = "all branches"
+		}
+		if q == "" || strings.Contains(strings.ToLower(display), q) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func (m Model) selectedBranch() string {
+	if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+		return m.availableBranches[m.branchIdx]
+	}
+	return m.defaultBranch
+}
+
 func (m *Model) applyFilter() {
 	runs := m.allRuns
 
@@ -356,6 +387,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 
 	case tea.KeyMsg:
+		if m.branchSelecting {
+			return m.handleBranchSelect(msg)
+		}
 		if m.searching {
 			return m.handleSearch(msg)
 		}
@@ -386,6 +420,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				prevBranch = m.availableBranches[m.branchIdx]
 			}
 			m.workflows, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
+			// ensure defaultBranch is always present in availableBranches
+			if m.defaultBranch != "" {
+				found := false
+				for _, b := range m.availableBranches {
+					if b == m.defaultBranch {
+						found = true
+						break
+					}
+				}
+				if !found {
+					rest := append(m.availableBranches[1:], m.defaultBranch)
+					sort.Strings(rest)
+					m.availableBranches = append([]string{""}, rest...)
+				}
+			}
 			m.branchIdx = 0
 			for i, b := range m.availableBranches {
 				if b == prevBranch {
@@ -482,6 +531,51 @@ func (m Model) handleSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.textInput, cmd = m.textInput.Update(msg)
 	return m, cmd
+}
+
+func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.branchSelecting = false
+		m.branchInput.Blur()
+		return m, nil
+	case tea.KeyEnter:
+		suggestions := m.filteredBranches()
+		if len(suggestions) > 0 {
+			idx := m.branchSuggestionCursor
+			if idx >= len(suggestions) {
+				idx = len(suggestions) - 1
+			}
+			chosen := suggestions[idx]
+			for i, b := range m.availableBranches {
+				if b == chosen {
+					m.branchIdx = i
+					break
+				}
+			}
+		}
+		m.branchSelecting = false
+		m.branchInput.Blur()
+		m.applyFilter()
+		m.cursor = 0
+		return m, nil
+	case tea.KeyUp:
+		if m.branchSuggestionCursor > 0 {
+			m.branchSuggestionCursor--
+		}
+		return m, nil
+	case tea.KeyDown:
+		suggestions := m.filteredBranches()
+		if m.branchSuggestionCursor < len(suggestions)-1 {
+			m.branchSuggestionCursor++
+		}
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.branchInput, cmd = m.branchInput.Update(msg)
+		m.branchSuggestionCursor = 0
+		return m, cmd
+	}
 }
 
 func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -678,12 +772,15 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case key.Matches(msg, m.keys.Enter):
 		if m.activePanel == 0 && m.workflowCursor == 0 {
-			// cycle branch filter
-			if len(m.availableBranches) > 0 {
-				m.branchIdx = (m.branchIdx + 1) % len(m.availableBranches)
-				m.applyFilter()
-				m.cursor = 0
+			cur := ""
+			if m.branchIdx > 0 && m.branchIdx < len(m.availableBranches) {
+				cur = m.availableBranches[m.branchIdx]
 			}
+			m.branchInput.SetValue(cur)
+			m.branchInput.Focus()
+			m.branchSuggestionCursor = 0
+			m.branchSelecting = true
+			return m, textinput.Blink
 		} else if m.activePanel == 2 && m.jobCursor < len(m.jobs) {
 			// open logs from detail panel
 			if run := m.selectedRun(); run != nil {
@@ -723,7 +820,7 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				if file, ok := m.workflowFiles[wfName]; ok {
 					m.dispatchConfirming = true
 					m.dispatchFile = file
-					m.dispatchRef = m.defaultBranch
+					m.dispatchRef = m.selectedBranch()
 					m.dispatchRepo = m.repoForWorkflow(wfName)
 				}
 			}
