@@ -3,6 +3,7 @@ name: Go Test
 on:
   push:
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   test:
