@@ -21,7 +21,6 @@ targets() {
         linux arm64 '' \
         windows amd64 '.exe' \
         windows 386 '.exe' \
-        windows arm '.exe' \
         darwin amd64 '' \
         darwin arm64 ''
     while [ $# -gt 0 ]; do
