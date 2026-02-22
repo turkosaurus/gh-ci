@@ -1,9 +1,9 @@
 # gh-ci
 [![Go Test](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml) [![Release](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml)
 
-terminal dashboard for CI actions/workflows
+terminal dashboard to manage CI actions/workflows
 
-## installation & usage
+## getting started
 
 ### extension (recommended)
 Requires [`gh`](https://cli.github.com/) CLI.
@@ -26,6 +26,8 @@ go build -o gh-ci
 - select any branch
 - workflows may be dispatched, rerun, or rerun with debug logs
 - logs searchable
+
+https://github.com/user-attachments/assets/27706301-2edc-4d64-b79b-12b07f99342a
 
 ## keys
 
