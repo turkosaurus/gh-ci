@@ -72,8 +72,7 @@ func renderMain(m Model) string {
 }
 
 func renderTitle(m Model, width int) string {
-	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
-		Render("GitHub Actions Dashboard")
+	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render("ci")
 }
 
 func renderPanelHeaders(m Model, workflowW, runsW, detailW int) string {

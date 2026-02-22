@@ -3,6 +3,7 @@
 set -e
 
 EXTENSION="ci"
+VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
 
 build_target() {
     GOOS=$1
@@ -10,7 +11,10 @@ build_target() {
     EXT=$3
     OUT="gh-${EXTENSION}-${GOOS}-${GOARCH}${EXT}"
 	echo "$OUT building..."
-    env GOOS="$GOOS" GOARCH="$GOARCH" go build -o "${OUT}" .
+    env GOOS="$GOOS" GOARCH="$GOARCH" \
+        go build \
+        -ldflags="-s -w -X main.version=$VERSION" \
+        -o "${OUT}" .
 }
 
 targets() {
