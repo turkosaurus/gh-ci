@@ -69,7 +69,7 @@ refresh_interval: 30  # seconds (default: 2)
 ## Requirements
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
-- Go 1.21+ (source builds only)
+- Go 1.24+ (source builds only)
 
 ## License
 
