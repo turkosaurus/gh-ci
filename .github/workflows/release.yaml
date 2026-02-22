@@ -29,6 +29,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
       - name: Build
         run: ./build.sh
       - name: Upload build artifacts
@@ -41,6 +44,8 @@ jobs:
     needs: [test, build-upload]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4     
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
