@@ -5,19 +5,21 @@ terminal dashboard for CI actions/workflows
 
 ## installation & usage
 
-extension (recommended, requires [`gh`](https://cli.github.com/) cli)
+extension (recommended)
 ```bash
 gh extension install turkosaurus/gh-ci
 gh ci
 ```
+_requires [`gh`](https://cli.github.com/) CLI_
 
-source (requires [go](https://go.dev))
+source 
 ```bash
 git clone https://github.com/turkosaurus/gh-ci.git
 cd gh-ci
 go build -o gh-ci
 ./gh-ci
 ```
+_requires [go](https://go.dev)_
 
 ## features
 - auto-detects current repo and branch
