@@ -122,7 +122,7 @@ type Model struct {
 	filteredRuns      []types.WorkflowRun
 	workflows         []string // flat: [workflowAll, "ci", "release", ...]
 	availableBranches []string // sorted real branch names, e.g. ["main", "feat/x"]
-	branchIdx         int      // index into availableBranches; 0 = all branches
+	branchIdx         int      // index into availableBranches (current branch filter selection)
 	jobs              []types.Job
 	logs              string
 	logJobName        string
