@@ -30,6 +30,8 @@ targets() {
     done
 }
 
+go mod download
+
 pids=""
 targets "$@"
 
