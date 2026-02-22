@@ -42,7 +42,7 @@ const logViewOverhead = 4
 
 // logContextLine is one display row in the context-window log view.
 type logContextLine struct {
-	lineNo  int    // 1-based original line number; 0 = blank separator
+	lineNo  int // 1-based original line number; 0 = blank separator
 	text    string
 	isMatch bool
 }
@@ -97,6 +97,7 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 				rows = append(rows, logContextLine{lineNo: i + 1, text: lines[i], isMatch: i == mIdx})
 			}
 			// also mark already-emitted rows that happen to be this match
+			// FIXME: this could be o(n2) in worst case
 			for j := range rows {
 				if rows[j].lineNo == mIdx+1 {
 					rows[j].isMatch = true
@@ -150,8 +151,8 @@ type Model struct {
 	logQuery        string
 	logSearching    bool
 	logContextLines []logContextLine
-	logMatchGroups  []int // row offsets of each match group in logContextLines
-	logMatchIdx     int   // current group for n/p navigation
+	logMatchGroups  []int           // row offsets of each match group in logContextLines
+	logMatchIdx     int             // current group for n/p navigation
 	textInput       textinput.Model // log search input
 
 	// branch selection
@@ -340,7 +341,6 @@ func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
 	}
 }
 
-
 func clearMsg() tea.Cmd {
 	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
 		return clearMsgMsg{}
@@ -482,7 +482,6 @@ func (m Model) selectedWorkflow() string {
 	return ""
 }
 
-
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -619,7 +618,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	return m, tea.Batch(cmds...)
 }
-
 
 func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {

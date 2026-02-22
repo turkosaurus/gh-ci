@@ -41,6 +41,10 @@ func renderMain(m Model) string {
 	}
 
 	bodyH := h - 3 // title + panel-headers + help
+	// set minimum to avoid rendering issues when tiny
+	if bodyH < 5 {
+		bodyH = 5
+	}
 
 	const workflowW = 22
 	const maxDetailW = 40

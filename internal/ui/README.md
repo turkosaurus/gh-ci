@@ -14,12 +14,12 @@ There are two screens, toggled via the `screen` field on the model:
 `Update()` dispatches key messages down a chain of handlers based on current state:
 
 ```
-handleBranchSelect  (branch picker input)
-handleLogSearch     (log search input)
-handleConfirm       (re-run confirmation)
-handleDispatchConfirm
-handleLogsKeys      (ScreenLogs navigation)
-handleMainKeys      (ScreenMain navigation)
+handleBranchSelect    (branch picker input)
+handleDispatchConfirm (dispatch confirmation)
+handleConfirm         (re-run confirmation)
+handleLogsKeys        (ScreenLogs navigation)
+  └─ handleLogSearch  (log search input, when m.logSearching)
+handleMainKeys        (ScreenMain navigation)
 ```
 
 ## Adding a keybinding
