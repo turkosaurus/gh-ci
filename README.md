@@ -27,6 +27,7 @@ go build -o gh-ci
 - workflows may be dispatched, rerun, or rerun with debug logs
 - logs searchable
 
+## a really shitty example video
 https://github.com/user-attachments/assets/27706301-2edc-4d64-b79b-12b07f99342a
 
 ## keys
