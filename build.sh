@@ -13,7 +13,7 @@ build_target() {
 	echo "$OUT building..."
     env GOOS="$GOOS" GOARCH="$GOARCH" \
         go build \
-        -ldflags="-s -w -X main.version=$VERSION" \
+        -ldflags="-s -w -X internal.ui=$VERSION" \
         -o "${OUT}" .
 }
 

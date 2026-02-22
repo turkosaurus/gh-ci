@@ -71,8 +71,11 @@ func renderMain(m Model) string {
 	)
 }
 
+var Version string = "dev"
+
 func renderTitle(m Model, width int) string {
-	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render("ci")
+	title := fmt.Sprintf("ci (%s)", Version)
+	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
 }
 
 func renderPanelHeaders(m Model, workflowW, runsW, detailW int) string {

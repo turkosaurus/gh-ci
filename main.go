@@ -9,8 +9,6 @@ import (
 	"github.com/turkosaurus/gh-ci/internal/ui"
 )
 
-var Version = "dev"
-
 func main() {
 	// Load configuration
 	cfg, err := config.Load()
