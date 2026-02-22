@@ -1,34 +1,31 @@
 # gh-ci
+[![Go Test](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml) [![Release](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml/badge.svg?event=release)](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml)
 
-A terminal dashboard for GitHub Actions, built as a [`gh`](https://cli.github.com/) extension.
+terminal dashboard for CI actions/workflows
 
-## Install
+## installation & usage
 
+extension (recommended, requires [`gh`](https://cli.github.com/) cli)
 ```bash
 gh extension install turkosaurus/gh-ci
+gh ci
 ```
 
-Or build from source:
-
+source (requires [go](https://go.dev))
 ```bash
 git clone https://github.com/turkosaurus/gh-ci.git
 cd gh-ci
 go build -o gh-ci
+./gh-ci
 ```
 
-## Usage
+## features
+- auto-detects current repo and branch
+- select any branch
+- workflows may be dispatched, rerun, or rerun with debug logs
+- logs searchable
 
-Run from inside a GitHub repository:
-
-```bash
-gh ci
-```
-
-Auto-detects your repo from the current directory. See [Configuration](#configuration) to watch multiple repos.
-
-## Keys
-
-### Main view
+## keys
 
 | Key | Action |
 |-----|--------|
@@ -44,7 +41,7 @@ Auto-detects your repo from the current directory. See [Configuration](#configur
 | `R` | Refresh |
 | `q`/`Ctrl+c` | Quit |
 
-### Log viewer
+### log viewer
 
 | Key | Action |
 |-----|--------|
@@ -55,7 +52,7 @@ Auto-detects your repo from the current directory. See [Configuration](#configur
 | `n`  `p` | Next / prev match |
 | `h`/`Esc`/`⌫` | Back |
 
-## Configuration
+## config
 
 `~/.config/gh-ci/config.yml`:
 
@@ -65,12 +62,3 @@ repos:
   - owner/repo2
 refresh_interval: 30  # seconds (default: 2)
 ```
-
-## Requirements
-
-- [GitHub CLI](https://cli.github.com/) installed and authenticated
-- Go 1.24+ (source builds only)
-
-## License
-
-MIT
