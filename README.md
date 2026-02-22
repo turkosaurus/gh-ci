@@ -1,5 +1,5 @@
 # gh-ci
-[![Go Test](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml) [![Release](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml/badge.svg?event=release)](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml)
+[![Go Test](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/test.yaml) [![Release](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml/badge.svg)](https://github.com/turkosaurus/gh-ci/actions/workflows/release.yaml) ([latest](https://github.com/turkosaurus/gh-ci/releases/tag/latest))
 
 terminal dashboard for CI actions/workflows
 
