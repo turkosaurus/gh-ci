@@ -20,11 +20,7 @@ jobs:
 
   test:
     needs: release-create
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run tests
-        run: ./test.sh
+    uses: ./.github/workflows/test.yaml
 
   build-upload:
     needs: release-create
