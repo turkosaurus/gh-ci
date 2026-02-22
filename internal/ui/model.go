@@ -520,7 +520,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if m.branchIdx < len(m.availableBranches) {
 				prevBranch = m.availableBranches[m.branchIdx]
 			}
-			m.workflows, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
+			_, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
 			// ensure both the configured primary branch and the local checkout are
 			// always present, even when they have no runs yet
 			for _, branch := range []string{m.defaultBranch, m.localBranch} {
@@ -545,10 +545,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.branchIdx = i
 					break
 				}
-			}
-			// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
-			if m.workflowCursor > len(m.workflows) {
-				m.workflowCursor = 0
 			}
 			m.applyFilter()
 			if run := m.selectedRun(); run != nil {
