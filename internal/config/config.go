@@ -11,15 +11,17 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Repos           []string `yaml:"repos"`
-	RefreshInterval int      `yaml:"refresh_interval"` // seconds
+	Repos                []string `yaml:"repos"`
+	RefreshInterval      int      `yaml:"refresh_interval"` // seconds
+	DefaultPrimaryBranch string   `yaml:"default_branch"`   // repo primary branch for dispatch; default "main"
 }
 
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	return &Config{
-		Repos:           []string{},
-		RefreshInterval: 30,
+		Repos:                []string{},
+		RefreshInterval:      2,
+		DefaultPrimaryBranch: "main",
 	}
 }
 
@@ -32,6 +34,9 @@ func Load() (*Config, error) {
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
+		}
+		if cfg.DefaultPrimaryBranch == "" {
+			cfg.DefaultPrimaryBranch = "main"
 		}
 		if len(cfg.Repos) > 0 {
 			return cfg, nil

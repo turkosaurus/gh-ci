@@ -1,4 +1,4 @@
-name: Test Workflow
+name: fast
 
 on:
   workflow_dispatch:

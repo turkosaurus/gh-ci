@@ -9,12 +9,15 @@ type KeyMap struct {
 	Enter        key.Binding
 	Rerun        key.Binding
 	Cancel       key.Binding
+	Dispatch     key.Binding
 	Logs         key.Binding
 	Open         key.Binding
-	Filter       key.Binding
 	Refresh      key.Binding
-	Help         key.Binding
 	Quit         key.Binding
+	Search       key.Binding
+	SearchNext   key.Binding
+	SearchPrev   key.Binding
+	Left         key.Binding
 	Back         key.Binding
 	PageUp       key.Binding
 	PageDown     key.Binding
@@ -22,7 +25,6 @@ type KeyMap struct {
 	HalfPageDown key.Binding
 	Top          key.Binding
 	Bottom       key.Binding
-	Tab          key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -48,29 +50,29 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("c"),
 			key.WithHelp("c", "cancel"),
 		),
+		Dispatch: key.NewBinding(
+			key.WithKeys("d"),
+			key.WithHelp("d", "dispatch"),
+		),
 		Logs: key.NewBinding(
-			key.WithKeys("l"),
-			key.WithHelp("l", "logs"),
+			key.WithKeys("l", "right"),
+			key.WithHelp("l/→", "right"),
 		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),
 		),
-		Filter: key.NewBinding(
-			key.WithKeys("/"),
-			key.WithHelp("/", "filter"),
-		),
 		Refresh: key.NewBinding(
 			key.WithKeys("R"),
 			key.WithHelp("R", "refresh"),
 		),
-		Help: key.NewBinding(
-			key.WithKeys("?"),
-			key.WithHelp("?", "help"),
-		),
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("h", "left"),
+			key.WithHelp("h/←", "left"),
 		),
 		Back: key.NewBinding(
 			key.WithKeys("esc"),
@@ -100,24 +102,18 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("G", "end"),
 			key.WithHelp("G", "bottom"),
 		),
-		Tab: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("tab", "next filter"),
+		Search: key.NewBinding(
+			key.WithKeys("/"),
+			key.WithHelp("/", "search"),
+		),
+		SearchNext: key.NewBinding(
+			key.WithKeys("n"),
+			key.WithHelp("n", "next match"),
+		),
+		SearchPrev: key.NewBinding(
+			key.WithKeys("p"),
+			key.WithHelp("p", "prev match"),
 		),
 	}
 }
 
-// ShortHelp returns the short help text
-func (k KeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Enter, k.Rerun, k.Cancel, k.Logs, k.Open, k.Quit}
-}
-
-// FullHelp returns the full help text
-func (k KeyMap) FullHelp() [][]key.Binding {
-	return [][]key.Binding{
-		{k.Up, k.Down, k.PageUp, k.PageDown},
-		{k.Enter, k.Logs, k.Open, k.Back},
-		{k.Rerun, k.Cancel, k.Refresh},
-		{k.Filter, k.Help, k.Quit},
-	}
-}

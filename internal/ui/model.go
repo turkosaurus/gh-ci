@@ -1,71 +1,181 @@
 package ui
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/jay-418/gh-ci/internal/config"
-	"github.com/jay-418/gh-ci/internal/gh"
-	"github.com/jay-418/gh-ci/internal/types"
-	"github.com/jay-418/gh-ci/internal/ui/components"
-	"github.com/jay-418/gh-ci/internal/ui/keys"
-	"github.com/jay-418/gh-ci/internal/ui/styles"
-	"github.com/jay-418/gh-ci/internal/ui/views"
+	"gopkg.in/yaml.v3"
+
+	"github.com/turkosaurus/gh-ci/internal/config"
+	"github.com/turkosaurus/gh-ci/internal/gh"
+	"github.com/turkosaurus/gh-ci/internal/types"
+	"github.com/turkosaurus/gh-ci/internal/ui/keys"
+	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
 
-// View represents the current view
-type View int
+type Screen int
 
 const (
-	ViewMain View = iota
-	ViewDetail
-	ViewLogs
-	ViewHelp
+	ScreenMain Screen = iota
+	ScreenLogs
 )
 
-// Model is the main Bubble Tea model
-type Model struct {
-	config      *config.Config
-	client      *gh.Client
-	styles      styles.Styles
-	keys        keys.KeyMap
-	mainView    views.MainView
-	detailView  views.DetailView
-	textInput   textinput.Model
-	currentView View
-	allRuns     []types.WorkflowRun
-	width       int
-	height      int
-	loading     bool
-	err         error
-	showFilter  bool
-	message     string
+// workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
+const workflowAll = "*"
+
+// Panel indices for activePanel.
+const (
+	panelWorkflows = 0
+	panelRuns      = 1
+	panelDetail    = 2
+)
+
+// logViewOverhead is the number of rows consumed by header, spacing, and help bar in the log view.
+const logViewOverhead = 4
+
+// logContextLine is one display row in the context-window log view.
+type logContextLine struct {
+	lineNo  int // 1-based original line number; 0 = blank separator
+	text    string
+	isMatch bool
 }
 
-// NewModel creates a new model
-func NewModel(cfg *config.Config) Model {
-	s := styles.DefaultStyles()
-	ti := textinput.New()
-	ti.Placeholder = "Search..."
-	ti.CharLimit = 50
-
-	return Model{
-		config:      cfg,
-		client:      gh.NewClient(),
-		styles:      s,
-		keys:        keys.DefaultKeyMap(),
-		mainView:    views.NewMainView(s),
-		detailView:  views.NewDetailView(s),
-		textInput:   ti,
-		currentView: ViewMain,
-		allRuns:     []types.WorkflowRun{},
-		loading:     true,
+// fuzzyMatch returns true if every character of query appears in order in line (case-insensitive).
+func fuzzyMatch(line, query string) bool {
+	line = strings.ToLower(line)
+	query = strings.ToLower(query)
+	queryRunes := []rune(query)
+	qi := 0
+	for _, ch := range line {
+		if qi < len(queryRunes) && ch == queryRunes[qi] {
+			qi++
+		}
 	}
+	return qi == len(queryRunes)
 }
 
-// Messages
+// buildLogContext produces a grep -C ctx style context-window view.
+// Returns the flat row list and, for each match group, the row offset where it starts.
+func buildLogContext(lines []string, query string, ctx int) (rows []logContextLine, groupOffsets []int) {
+	// collect matching line indices
+	var matches []int
+	for i, l := range lines {
+		if fuzzyMatch(l, query) {
+			matches = append(matches, i)
+		}
+	}
+	if len(matches) == 0 {
+		return
+	}
+
+	// merge overlapping windows and emit rows
+	prevEnd := -1
+	for _, mIdx := range matches {
+		start := max(0, mIdx-ctx)
+		end := min(len(lines)-1, mIdx+ctx)
+
+		if prevEnd < 0 || start > prevEnd+1 {
+			// new non-adjacent group
+			if prevEnd >= 0 {
+				rows = append(rows, logContextLine{}) // blank separator
+			}
+			groupOffsets = append(groupOffsets, len(rows))
+			for i := start; i <= end; i++ {
+				rows = append(rows, logContextLine{lineNo: i + 1, text: lines[i], isMatch: i == mIdx})
+			}
+		} else {
+			// overlapping with previous group: extend (this match is another hit inside same window)
+			// mark the match line itself if it wasn't already included
+			for i := prevEnd + 1; i <= end; i++ {
+				rows = append(rows, logContextLine{lineNo: i + 1, text: lines[i], isMatch: i == mIdx})
+			}
+			// also mark already-emitted rows that happen to be this match
+			// FIXME: this could be o(n2) in worst case
+			for j := range rows {
+				if rows[j].lineNo == mIdx+1 {
+					rows[j].isMatch = true
+					break
+				}
+			}
+		}
+		prevEnd = end
+	}
+	return
+}
+
+type Model struct {
+	config *config.Config
+	client gh.Client
+	styles styles.Styles
+	keys   keys.KeyMap
+
+	screen      Screen
+	activePanel int // 0=workflows, 1=runs, 2=detail
+
+	// data
+	allRuns           []types.WorkflowRun
+	filteredRuns      []types.WorkflowRun
+	workflows         []string // flat: [workflowAll, "ci", "release", ...]
+	availableBranches []string // sorted real branch names, e.g. ["main", "feat/x"]
+	branchIdx         int      // index into availableBranches (current branch filter selection)
+	jobs              []types.Job
+	logs              string
+	logJobName        string
+
+	// local workflow definitions discovered from .github/workflows/
+	localDefs []types.WorkflowDef
+
+	// workflow filename cache: workflow name → filename (e.g. "ci" → "ci.yaml")
+	workflowFiles map[string]string
+
+	// dispatch confirmation state
+	dispatchConfirming bool
+	dispatchRepo       string
+	dispatchFile       string
+	dispatchRef        string
+
+	// navigation
+	workflowCursor int
+	cursor         int
+	jobCursor      int
+	logOffset      int
+
+	// log search
+	logQuery        string
+	logSearching    bool
+	logContextLines []logContextLine
+	logMatchGroups  []int           // row offsets of each match group in logContextLines
+	logMatchIdx     int             // current group for n/p navigation
+	textInput       textinput.Model // log search input
+
+	// branch selection
+	branchSelecting        bool
+	branchInput            textinput.Model
+	branchSuggestionCursor int
+
+	// layout
+	width  int
+	height int
+
+	// state
+	loading       bool
+	message       string
+	defaultBranch string // from config; repo primary branch (e.g. "main")
+	localBranch   string // current git checkout; used for local def scoping and local-only dispatch
+
+	// rerun confirmation
+	confirming  bool
+	confirmRepo string
+	confirmID   int64
+}
+
 type (
 	runsLoadedMsg struct {
 		runs []types.WorkflowRun
@@ -84,41 +194,100 @@ type (
 		message string
 		err     error
 	}
+	dispatchResultMsg struct {
+		message string
+		err     error
+	}
 	tickMsg     time.Time
 	clearMsgMsg struct{}
 )
 
-// Init initializes the model
-func (m Model) Init() tea.Cmd {
-	return tea.Batch(
-		m.loadRuns(),
-		m.tick(),
-	)
+func currentGitBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
-// tick returns a command that sends a tick message
+func scanLocalWorkflows() []types.WorkflowDef {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return nil
+	}
+	root := strings.TrimSpace(string(out))
+
+	var defs []types.WorkflowDef
+	for _, pattern := range []string{"*.yaml", "*.yml"} {
+		matches, _ := filepath.Glob(filepath.Join(root, ".github", "workflows", pattern))
+		for _, path := range matches {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			var wf struct {
+				Name string `yaml:"name"`
+			}
+			_ = yaml.Unmarshal(data, &wf)
+			name := wf.Name
+			if name == "" {
+				ext := filepath.Ext(path)
+				name = strings.TrimSuffix(filepath.Base(path), ext)
+			}
+			file := filepath.Base(path)
+			defs = append(defs, types.WorkflowDef{Name: name, File: file})
+		}
+	}
+	return defs
+}
+
+func NewModel(cfg *config.Config) Model {
+	ti := textinput.New()
+	ti.Placeholder = "search logs..."
+	ti.CharLimit = 100
+	bi := textinput.New()
+	bi.Placeholder = "filter branches..."
+	bi.CharLimit = 100
+	return Model{
+		config:         cfg,
+		client:         gh.NewClient(),
+		styles:         styles.DefaultStyles(),
+		keys:           keys.DefaultKeyMap(),
+		textInput:      ti,
+		branchInput:    bi,
+		loading:        true,
+		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
+		localDefs:      scanLocalWorkflows(),
+		workflowFiles:  make(map[string]string),
+		defaultBranch:  cfg.DefaultPrimaryBranch,
+		localBranch:    currentGitBranch(),
+	}
+}
+
+func (m Model) Init() tea.Cmd {
+	return tea.Batch(m.loadRuns(), m.tick())
+}
+
 func (m Model) tick() tea.Cmd {
 	return tea.Tick(time.Duration(m.config.RefreshInterval)*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
-// loadRuns loads workflow runs from GitHub
 func (m Model) loadRuns() tea.Cmd {
 	return func() tea.Msg {
-		var allRuns []types.WorkflowRun
+		var all []types.WorkflowRun
 		for _, repo := range m.config.Repos {
-			runs, err := m.client.ListWorkflowRuns(repo, 20)
+			runs, err := m.client.ListWorkflowRuns(repo, 100)
 			if err != nil {
 				return runsLoadedMsg{err: err}
 			}
-			allRuns = append(allRuns, runs...)
+			all = append(all, runs...)
 		}
-		return runsLoadedMsg{runs: allRuns}
+		return runsLoadedMsg{runs: all}
 	}
 }
 
-// loadJobs loads jobs for a run
 func (m Model) loadJobs(repo string, runID int64) tea.Cmd {
 	return func() tea.Msg {
 		jobs, err := m.client.GetJobs(repo, runID)
@@ -129,7 +298,6 @@ func (m Model) loadJobs(repo string, runID int64) tea.Cmd {
 	}
 }
 
-// loadLogs loads logs for a job
 func (m Model) loadLogs(repo string, jobID int64, jobName string) tea.Cmd {
 	return func() tea.Msg {
 		logs, err := m.client.GetJobLogs(repo, jobID)
@@ -140,36 +308,180 @@ func (m Model) loadLogs(repo string, jobID int64, jobName string) tea.Cmd {
 	}
 }
 
-// rerunWorkflow re-runs a workflow
-func (m Model) rerunWorkflow(repo string, runID int64) tea.Cmd {
+func (m Model) rerunWorkflow(repo string, runID int64, debug bool) tea.Cmd {
 	return func() tea.Msg {
-		err := m.client.RerunWorkflow(repo, runID)
+		err := m.client.RerunWorkflow(repo, runID, debug)
 		if err != nil {
 			return actionResultMsg{err: err}
 		}
-		return actionResultMsg{message: "Workflow re-run triggered"}
+		if debug {
+			return actionResultMsg{message: "re-run triggered (debug logging enabled)"}
+		}
+		return actionResultMsg{message: "re-run triggered"}
 	}
 }
 
-// cancelWorkflow cancels a workflow
 func (m Model) cancelWorkflow(repo string, runID int64) tea.Cmd {
 	return func() tea.Msg {
 		err := m.client.CancelWorkflow(repo, runID)
 		if err != nil {
 			return actionResultMsg{err: err}
 		}
-		return actionResultMsg{message: "Workflow cancelled"}
+		return actionResultMsg{message: "workflow cancelled"}
 	}
 }
 
-// clearMessage returns a command that clears the message after a delay
-func clearMessage() tea.Cmd {
+func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
+	return func() tea.Msg {
+		err := m.client.DispatchWorkflow(repo, file, ref)
+		if err != nil {
+			return dispatchResultMsg{err: err}
+		}
+		return dispatchResultMsg{message: "dispatched " + file + " on " + ref}
+	}
+}
+
+func clearMsg() tea.Cmd {
 	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
 		return clearMsgMsg{}
 	})
 }
 
-// Update handles messages
+// deriveWorkflows collects unique workflow names (sorted, prefixed with workflowAll)
+// and unique branch names (sorted, no sentinel — all entries are real branches).
+// localDefs are merged in so workflows with no runs still appear.
+func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (workflows []string, branches []string) {
+	wfSeen := map[string]bool{}
+	brSeen := map[string]bool{}
+	for _, r := range runs {
+		wfSeen[r.Name] = true
+		brSeen[r.HeadBranch] = true
+	}
+	for _, def := range localDefs {
+		wfSeen[def.Name] = true
+	}
+	for w := range wfSeen {
+		workflows = append(workflows, w)
+	}
+	sort.Strings(workflows)
+	workflows = append([]string{workflowAll}, workflows...)
+
+	for b := range brSeen {
+		branches = append(branches, b)
+	}
+	sort.Strings(branches)
+	return
+}
+
+func (m Model) filteredBranches() []string {
+	q := strings.ToLower(m.branchInput.Value())
+	var out []string
+	for _, b := range m.availableBranches {
+		if q == "" || strings.Contains(strings.ToLower(b), q) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func (m Model) selectedBranch() string {
+	if m.branchIdx < len(m.availableBranches) {
+		return m.availableBranches[m.branchIdx]
+	}
+	return m.defaultBranch
+}
+
+func (m *Model) applyFilter() {
+	runs := m.allRuns
+
+	// Apply branch filter — always active since there is no "all branches" option.
+	branchRuns := runs
+	if m.branchIdx < len(m.availableBranches) {
+		branch := m.availableBranches[m.branchIdx]
+		var br []types.WorkflowRun
+		for _, r := range runs {
+			if r.HeadBranch == branch {
+				br = append(br, r)
+			}
+		}
+		branchRuns = br
+	}
+
+	// Re-derive workflow list from branch-filtered runs, plus any local def that
+	// has never run anywhere (so it can be dispatched from any branch).
+	wfSeen := map[string]bool{}
+	for _, r := range branchRuns {
+		wfSeen[r.Name] = true
+	}
+	selectedBranch := ""
+	if m.branchIdx < len(m.availableBranches) {
+		selectedBranch = m.availableBranches[m.branchIdx]
+	}
+	if selectedBranch == m.localBranch && m.localBranch != "" {
+		hasRunsAnywhere := map[string]bool{}
+		for _, r := range m.allRuns {
+			hasRunsAnywhere[r.Name] = true
+		}
+		for _, def := range m.localDefs {
+			if !hasRunsAnywhere[def.Name] {
+				wfSeen[def.Name] = true
+			}
+		}
+	}
+	var workflows []string
+	for w := range wfSeen {
+		workflows = append(workflows, w)
+	}
+	sort.Strings(workflows)
+	workflows = append([]string{workflowAll}, workflows...)
+	// Preserve workflowCursor by name across re-derives.
+	if prevWf := m.selectedWorkflow(); prevWf != "" {
+		m.workflowCursor = 1 // default to workflowAll if not found
+		for i, w := range workflows {
+			if w == prevWf {
+				m.workflowCursor = i + 1
+				break
+			}
+		}
+	} else if m.workflowCursor > len(workflows) {
+		m.workflowCursor = 0
+	}
+	m.workflows = workflows
+
+	// Apply workflow filter.
+	runs = branchRuns
+	if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+		var wf []types.WorkflowRun
+		for _, r := range runs {
+			if r.Name == wfName {
+				wf = append(wf, r)
+			}
+		}
+		runs = wf
+	}
+
+	m.filteredRuns = runs
+	if m.cursor >= len(m.filteredRuns) {
+		m.cursor = max(0, len(m.filteredRuns)-1)
+	}
+}
+
+func (m Model) selectedRun() *types.WorkflowRun {
+	if m.cursor >= 0 && m.cursor < len(m.filteredRuns) {
+		return &m.filteredRuns[m.cursor]
+	}
+	return nil
+}
+
+// selectedWorkflow returns the workflow name at the current workflow cursor,
+// or "" when the branch row (cursor 0) or an out-of-range position is selected.
+func (m Model) selectedWorkflow() string {
+	if m.workflowCursor > 0 && m.workflowCursor <= len(m.workflows) {
+		return m.workflows[m.workflowCursor-1]
+	}
+	return ""
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 
@@ -177,307 +489,561 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.mainView.SetSize(msg.Width, msg.Height)
-		m.detailView.SetSize(msg.Width, msg.Height)
 
 	case tea.KeyMsg:
-		// Handle filter input mode
-		if m.showFilter {
-			return m.handleFilterInput(msg)
+		if m.branchSelecting {
+			return m.handleBranchSelect(msg)
 		}
-		return m.handleKeyPress(msg)
+		if m.dispatchConfirming {
+			return m.handleDispatchConfirm(msg)
+		}
+		if m.confirming {
+			return m.handleConfirm(msg)
+		}
+		switch m.screen {
+		case ScreenMain:
+			return m.handleMainKeys(msg)
+		case ScreenLogs:
+			return m.handleLogsKeys(msg)
+		}
 
 	case runsLoadedMsg:
 		m.loading = false
 		if msg.err != nil {
-			m.err = msg.err
-			m.mainView.SetMessage("Error: " + msg.err.Error())
+			m.message = "error: " + msg.err.Error()
 		} else {
 			m.allRuns = msg.runs
-			m.updateFilteredRuns()
+			// Preserve selected branch by name; on first load start on local checkout
+			prevBranch := ""
+			if m.availableBranches == nil {
+				prevBranch = m.localBranch
+			} else if m.branchIdx < len(m.availableBranches) {
+				prevBranch = m.availableBranches[m.branchIdx]
+			}
+			m.workflows, m.availableBranches = deriveWorkflows(m.allRuns, m.localDefs)
+			// ensure both the configured primary branch and the local checkout are
+			// always present, even when they have no runs yet
+			for _, branch := range []string{m.defaultBranch, m.localBranch} {
+				if branch == "" {
+					continue
+				}
+				found := false
+				for _, b := range m.availableBranches {
+					if b == branch {
+						found = true
+						break
+					}
+				}
+				if !found {
+					m.availableBranches = append(m.availableBranches, branch)
+					sort.Strings(m.availableBranches)
+				}
+			}
+			m.branchIdx = 0
+			for i, b := range m.availableBranches {
+				if b == prevBranch {
+					m.branchIdx = i
+					break
+				}
+			}
+			// cursor scheme: 0=branch, 1..N=workflows[0..N-1]
+			if m.workflowCursor > len(m.workflows) {
+				m.workflowCursor = 0
+			}
+			m.applyFilter()
+			if run := m.selectedRun(); run != nil {
+				cmds = append(cmds, m.loadJobs(run.Repository.FullName, run.ID))
+			}
+			// populate workflowFiles (name → filename) from path field in run response
+			for _, r := range m.allRuns {
+				if r.Path == "" {
+					continue
+				}
+				if _, ok := m.workflowFiles[r.Name]; ok {
+					continue
+				}
+				parts := strings.Split(r.Path, "/")
+				m.workflowFiles[r.Name] = parts[len(parts)-1]
+			}
+			// also populate from local defs (covers workflows with no runs)
+			for _, def := range m.localDefs {
+				if _, ok := m.workflowFiles[def.Name]; !ok {
+					m.workflowFiles[def.Name] = def.File
+				}
+			}
 		}
 
 	case jobsLoadedMsg:
-		if msg.err != nil {
-			m.detailView.SetError(msg.err.Error())
-		} else {
-			m.detailView.SetJobs(msg.jobs)
+		if msg.err == nil {
+			m.jobs = msg.jobs
+			if m.jobCursor >= len(m.jobs) {
+				m.jobCursor = 0
+			}
 		}
 
 	case logsLoadedMsg:
+		m.message = ""
 		if msg.err != nil {
-			m.detailView.LogViewer.SetError(msg.err.Error())
+			m.message = "error loading logs: " + msg.err.Error()
 		} else {
-			m.detailView.LogViewer.SetLogs(msg.logs, msg.jobName)
+			m.logs = msg.logs
+			m.logJobName = msg.jobName
+			m.logOffset = 0
+			m.screen = ScreenLogs
 		}
-		m.detailView.ShowLogs = true
-		m.currentView = ViewLogs
 
 	case actionResultMsg:
 		if msg.err != nil {
-			m.mainView.SetMessage("Error: " + msg.err.Error())
+			m.message = "error: " + msg.err.Error()
 		} else {
-			m.mainView.SetMessage(msg.message)
+			m.message = msg.message
 		}
-		cmds = append(cmds, clearMessage(), m.loadRuns())
+		cmds = append(cmds, clearMsg(), m.loadRuns())
+
+	case dispatchResultMsg:
+		if msg.err != nil {
+			m.message = "error: " + msg.err.Error()
+		} else {
+			m.message = msg.message
+		}
+		cmds = append(cmds, clearMsg(), m.loadRuns())
 
 	case tickMsg:
 		cmds = append(cmds, m.loadRuns(), m.tick())
 
 	case clearMsgMsg:
-		m.mainView.ClearMessage()
+		m.message = ""
+
 	}
 
 	return m, tea.Batch(cmds...)
 }
 
-// handleFilterInput handles input when filter is active
-func (m Model) handleFilterInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m Model) handleBranchSelect(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEscape:
-		m.showFilter = false
-		m.textInput.Blur()
+		m.branchSelecting = false
+		m.branchInput.Blur()
 		return m, nil
 	case tea.KeyEnter:
-		m.mainView.SearchQuery = m.textInput.Value()
-		m.showFilter = false
-		m.textInput.Blur()
-		m.updateFilteredRuns()
+		suggestions := m.filteredBranches()
+		if len(suggestions) > 0 {
+			idx := m.branchSuggestionCursor
+			if idx >= len(suggestions) {
+				idx = len(suggestions) - 1
+			}
+			chosen := suggestions[idx]
+			for i, b := range m.availableBranches {
+				if b == chosen {
+					m.branchIdx = i
+					break
+				}
+			}
+		}
+		m.branchSelecting = false
+		m.branchInput.Blur()
+		m.workflowCursor = 1 // land on workflowAll so next Enter goes right, not re-opens selector
+		m.applyFilter()
+		m.cursor = 0
 		return m, nil
+	case tea.KeyUp:
+		if m.branchSuggestionCursor > 0 {
+			m.branchSuggestionCursor--
+		}
+		return m, nil
+	case tea.KeyDown:
+		suggestions := m.filteredBranches()
+		if m.branchSuggestionCursor < len(suggestions)-1 {
+			m.branchSuggestionCursor++
+		}
+		return m, nil
+	default:
+		var cmd tea.Cmd
+		m.branchInput, cmd = m.branchInput.Update(msg)
+		m.branchSuggestionCursor = 0
+		return m, cmd
 	}
-
-	var cmd tea.Cmd
-	m.textInput, cmd = m.textInput.Update(msg)
-	return m, cmd
 }
 
-// handleKeyPress handles key presses
-func (m Model) handleKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch m.currentView {
-	case ViewMain:
-		return m.handleMainKeys(msg)
-	case ViewDetail:
-		return m.handleDetailKeys(msg)
-	case ViewLogs:
-		return m.handleLogsKeys(msg)
-	case ViewHelp:
-		return m.handleHelpKeys(msg)
+func (m Model) handleConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.confirming = false
+		m.message = "re-running..."
+		return m, m.rerunWorkflow(m.confirmRepo, m.confirmID, false)
+	case "d":
+		m.confirming = false
+		m.message = "re-running with debug..."
+		return m, m.rerunWorkflow(m.confirmRepo, m.confirmID, true)
+	case "esc", "q":
+		m.confirming = false
 	}
 	return m, nil
 }
 
-// handleMainKeys handles key presses in main view
+func (m Model) handleDispatchConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y":
+		m.dispatchConfirming = false
+		m.message = "dispatching..."
+		return m, m.runDispatch(m.dispatchRepo, m.dispatchFile, m.dispatchRef)
+	case "esc", "q":
+		m.dispatchConfirming = false
+	}
+	return m, nil
+}
+
+func (m Model) moveCursor(delta int) (tea.Model, tea.Cmd) {
+	switch m.activePanel {
+	case panelWorkflows:
+		n := m.workflowCursor + delta
+		if n >= 0 && n <= len(m.workflows) {
+			m.workflowCursor = n
+			m.applyFilter()
+			m.cursor = 0
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case panelRuns:
+		n := m.cursor + delta
+		if n >= 0 && n < len(m.filteredRuns) {
+			m.cursor = n
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case panelDetail:
+		n := m.jobCursor + delta
+		if n >= 0 && n < len(m.jobs) {
+			m.jobCursor = n
+		}
+	}
+	return m, nil
+}
+
+func (m Model) moveCursorPage(dir int) (tea.Model, tea.Cmd) {
+	const pageSize = 10
+	switch m.activePanel {
+	case panelWorkflows:
+		n := max(0, min(len(m.workflows), m.workflowCursor+dir*pageSize))
+		if n != m.workflowCursor {
+			m.workflowCursor = n
+			m.applyFilter()
+			m.cursor = 0
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	case panelRuns:
+		n := max(0, min(len(m.filteredRuns)-1, m.cursor+dir*pageSize))
+		if n != m.cursor {
+			m.cursor = n
+			m.jobs = nil
+			m.jobCursor = 0
+			if run := m.selectedRun(); run != nil {
+				return m, m.loadJobs(run.Repository.FullName, run.ID)
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m Model) moveCursorEdge(top bool) (tea.Model, tea.Cmd) {
+	switch m.activePanel {
+	case panelWorkflows:
+		if top {
+			m.workflowCursor = 0
+		} else {
+			m.workflowCursor = len(m.workflows)
+		}
+		m.applyFilter()
+		m.cursor = 0
+		m.jobs = nil
+		m.jobCursor = 0
+		if run := m.selectedRun(); run != nil {
+			return m, m.loadJobs(run.Repository.FullName, run.ID)
+		}
+	case panelRuns:
+		if top {
+			m.cursor = 0
+		} else {
+			m.cursor = max(0, len(m.filteredRuns)-1)
+		}
+		m.jobs = nil
+		m.jobCursor = 0
+		if run := m.selectedRun(); run != nil {
+			return m, m.loadJobs(run.Repository.FullName, run.ID)
+		}
+	case panelDetail:
+		if top {
+			m.jobCursor = 0
+		} else {
+			m.jobCursor = max(0, len(m.jobs)-1)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) openURL() string {
+	switch m.activePanel {
+	case panelWorkflows:
+		wfName := m.selectedWorkflow()
+		if wfName == "" || wfName == workflowAll {
+			// branch cell or "all workflows" — open repo actions page
+			if run := m.selectedRun(); run != nil {
+				return run.Repository.HTMLURL + "/actions"
+			}
+			if len(m.config.Repos) > 0 {
+				return "https://github.com/" + m.config.Repos[0] + "/actions"
+			}
+		} else {
+			// specific workflow — open its actions/workflows page
+			for _, r := range m.allRuns {
+				if r.Name == wfName {
+					if filename, ok := m.workflowFiles[wfName]; ok {
+						return r.Repository.HTMLURL + "/actions/workflows/" + filename
+					}
+					return r.HTMLURL
+				}
+			}
+		}
+	case panelRuns:
+		if run := m.selectedRun(); run != nil {
+			return run.HTMLURL
+		}
+	case panelDetail:
+		if m.jobCursor < len(m.jobs) {
+			return m.jobs[m.jobCursor].HTMLURL
+		}
+	}
+	return ""
+}
+
 func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 
 	case key.Matches(msg, m.keys.Up):
-		m.mainView.RunList.MoveUp()
+		return m.moveCursor(-1)
 
 	case key.Matches(msg, m.keys.Down):
-		m.mainView.RunList.MoveDown()
+		return m.moveCursor(1)
 
 	case key.Matches(msg, m.keys.PageUp):
-		m.mainView.RunList.PageUp(10)
+		return m.moveCursorPage(-1)
 
 	case key.Matches(msg, m.keys.PageDown):
-		m.mainView.RunList.PageDown(10)
+		return m.moveCursorPage(1)
 
 	case key.Matches(msg, m.keys.Top):
-		m.mainView.RunList.GoToTop()
+		return m.moveCursorEdge(true)
 
 	case key.Matches(msg, m.keys.Bottom):
-		m.mainView.RunList.GoToBottom()
+		return m.moveCursorEdge(false)
 
-	case key.Matches(msg, m.keys.Enter):
-		run := m.mainView.RunList.SelectedRun()
-		if run != nil {
-			m.detailView.SetRun(run)
-			m.currentView = ViewDetail
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
+	case key.Matches(msg, m.keys.Logs): // l — move right between panels
+		if m.activePanel < panelDetail {
+			m.activePanel++
 		}
 
-	case key.Matches(msg, m.keys.Logs):
-		run := m.mainView.RunList.SelectedRun()
-		if run != nil {
-			m.detailView.SetRun(run)
-			m.detailView.LogViewer.SetLoading(true)
-			m.currentView = ViewLogs
-			// Load jobs first to get job ID
-			return m, m.loadJobs(run.Repository.FullName, run.ID)
+	case key.Matches(msg, m.keys.Enter):
+		if m.activePanel == panelWorkflows && m.workflowCursor == 0 {
+			m.branchInput.SetValue("")
+			m.branchInput.Focus()
+			m.branchSuggestionCursor = 0
+			m.branchSelecting = true
+			return m, textinput.Blink
+		} else if m.activePanel < panelDetail {
+			m.activePanel++
+		} else if m.jobCursor < len(m.jobs) {
+			// detail panel: enter opens logs for the selected job
+			if run := m.selectedRun(); run != nil {
+				job := m.jobs[m.jobCursor]
+				m.message = "loading logs..."
+				return m, m.loadLogs(run.Repository.FullName, job.ID, job.Name)
+			}
+		}
+
+	case key.Matches(msg, m.keys.Left): // move left between panels
+		if m.activePanel > panelWorkflows {
+			m.activePanel--
 		}
 
 	case key.Matches(msg, m.keys.Open):
-		run := m.mainView.RunList.SelectedRun()
-		if run != nil {
-			m.client.OpenInBrowser(run.HTMLURL)
+		if url := m.openURL(); url != "" {
+			m.client.OpenInBrowser(url)
 		}
 
 	case key.Matches(msg, m.keys.Rerun):
-		run := m.mainView.RunList.SelectedRun()
-		if run != nil {
-			m.mainView.SetMessage("Re-running workflow...")
-			return m, m.rerunWorkflow(run.Repository.FullName, run.ID)
+		if run := m.selectedRun(); run != nil {
+			m.confirming = true
+			m.confirmRepo = run.Repository.FullName
+			m.confirmID = run.ID
 		}
 
 	case key.Matches(msg, m.keys.Cancel):
-		run := m.mainView.RunList.SelectedRun()
-		if run != nil && run.Status == "in_progress" {
-			m.mainView.SetMessage("Cancelling workflow...")
+		if run := m.selectedRun(); run != nil && run.Status == types.RunStatusInProgress {
+			m.message = "cancelling..."
 			return m, m.cancelWorkflow(run.Repository.FullName, run.ID)
 		}
 
-	case key.Matches(msg, m.keys.Filter):
-		m.showFilter = true
+	case key.Matches(msg, m.keys.Dispatch):
+		if m.activePanel == panelWorkflows {
+			if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+				if file, ok := m.workflowFiles[wfName]; ok {
+					var repo string
+					if run := m.selectedRun(); run != nil {
+						// Derive repo from the currently visible run (already filtered by
+						// branch + workflow), so dispatch always targets the right repo.
+						repo = run.Repository.FullName
+					} else if len(m.config.Repos) == 1 {
+						// Local-only workflow (no runs yet) with a single configured repo.
+						repo = m.config.Repos[0]
+					} else {
+						m.message = "cannot dispatch: no runs for this workflow on this branch"
+						return m, clearMsg()
+					}
+					m.dispatchConfirming = true
+					m.dispatchFile = file
+					m.dispatchRef = m.selectedBranch()
+					m.dispatchRepo = repo
+				}
+			}
+		}
+
+	case key.Matches(msg, m.keys.Back):
+		if m.activePanel > 0 {
+			m.activePanel--
+		}
+
+	case key.Matches(msg, m.keys.Refresh):
+		m.message = "refreshing..."
+		return m, m.loadRuns()
+	}
+
+	return m, nil
+}
+
+func (m Model) handleLogSearch(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEscape:
+		m.logSearching = false
+		m.textInput.Blur()
+		return m, nil
+	case tea.KeyEnter:
+		m.logQuery = m.textInput.Value()
+		m.logSearching = false
+		m.textInput.Blur()
+		m.logOffset = 0
+		m.logMatchIdx = 0
+		if m.logQuery != "" {
+			lines := strings.Split(m.logs, "\n")
+			m.logContextLines, m.logMatchGroups = buildLogContext(lines, m.logQuery, 3)
+		} else {
+			m.logContextLines = nil
+			m.logMatchGroups = nil
+		}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.textInput, cmd = m.textInput.Update(msg)
+	return m, cmd
+}
+
+func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.logSearching {
+		return m.handleLogSearch(msg)
+	}
+
+	// Use context lines when a query is active, otherwise raw log lines.
+	var displayLen int
+	if m.logQuery != "" {
+		displayLen = len(m.logContextLines)
+	} else {
+		displayLen = len(strings.Split(m.logs, "\n"))
+	}
+	visibleLines := m.height - logViewOverhead
+
+	switch {
+	case key.Matches(msg, m.keys.Quit):
+		return m, tea.Quit
+
+	case key.Matches(msg, m.keys.Back), key.Matches(msg, m.keys.Left), msg.Type == tea.KeyBackspace:
+		m.screen = ScreenMain
+		m.logQuery = ""
+		m.logSearching = false
+		m.logContextLines = nil
+		m.logMatchGroups = nil
+		m.logMatchIdx = 0
+
+	case key.Matches(msg, m.keys.Search):
+		m.logSearching = true
+		m.textInput.SetValue("")
 		m.textInput.Focus()
 		return m, textinput.Blink
 
-	case key.Matches(msg, m.keys.Tab):
-		m.mainView.CycleFilter()
-		m.updateFilteredRuns()
-
-	case key.Matches(msg, m.keys.Refresh):
-		m.mainView.SetMessage("Refreshing...")
-		return m, m.loadRuns()
-
-	case key.Matches(msg, m.keys.Help):
-		m.mainView.Help.Toggle()
-
-	case key.Matches(msg, m.keys.Back):
-		m.mainView.ClearFilter()
-		m.updateFilteredRuns()
-	}
-
-	return m, nil
-}
-
-// handleDetailKeys handles key presses in detail view
-func (m Model) handleDetailKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Quit):
-		return m, tea.Quit
-
-	case key.Matches(msg, m.keys.Back):
-		m.currentView = ViewMain
-
-	case key.Matches(msg, m.keys.Logs):
-		// Load logs for first job
-		if len(m.detailView.Jobs) > 0 {
-			job := m.detailView.Jobs[0]
-			m.detailView.LogViewer.SetLoading(true)
-			m.detailView.ShowLogs = true
-			m.currentView = ViewLogs
-			return m, m.loadLogs(m.detailView.Run.Repository.FullName, job.ID, job.Name)
+	case key.Matches(msg, m.keys.SearchNext):
+		if m.logQuery != "" && m.logMatchIdx < len(m.logMatchGroups)-1 {
+			m.logMatchIdx++
+			m.logOffset = m.logMatchGroups[m.logMatchIdx]
 		}
 
-	case key.Matches(msg, m.keys.Open):
-		if m.detailView.Run != nil {
-			m.client.OpenInBrowser(m.detailView.Run.HTMLURL)
+	case key.Matches(msg, m.keys.SearchPrev):
+		if m.logQuery != "" && m.logMatchIdx > 0 {
+			m.logMatchIdx--
+			m.logOffset = m.logMatchGroups[m.logMatchIdx]
 		}
-
-	case key.Matches(msg, m.keys.Rerun):
-		if m.detailView.Run != nil {
-			m.mainView.SetMessage("Re-running workflow...")
-			return m, m.rerunWorkflow(m.detailView.Run.Repository.FullName, m.detailView.Run.ID)
-		}
-
-	case key.Matches(msg, m.keys.Cancel):
-		if m.detailView.Run != nil && m.detailView.Run.Status == "in_progress" {
-			m.mainView.SetMessage("Cancelling workflow...")
-			return m, m.cancelWorkflow(m.detailView.Run.Repository.FullName, m.detailView.Run.ID)
-		}
-
-	case key.Matches(msg, m.keys.Help):
-		m.detailView.Help.Toggle()
-	}
-
-	return m, nil
-}
-
-// handleLogsKeys handles key presses in logs view
-func (m Model) handleLogsKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Quit):
-		return m, tea.Quit
-
-	case key.Matches(msg, m.keys.Back):
-		m.detailView.ShowLogs = false
-		m.currentView = ViewDetail
 
 	case key.Matches(msg, m.keys.Up):
-		m.detailView.LogViewer.ScrollUp()
+		if m.logOffset > 0 {
+			m.logOffset--
+		}
 
 	case key.Matches(msg, m.keys.Down):
-		m.detailView.LogViewer.ScrollDown()
+		if maxOffset := displayLen - visibleLines; m.logOffset < maxOffset {
+			m.logOffset++
+		}
 
 	case key.Matches(msg, m.keys.PageUp):
-		m.detailView.LogViewer.PageUp()
+		m.logOffset = max(0, m.logOffset-visibleLines)
 
 	case key.Matches(msg, m.keys.PageDown):
-		m.detailView.LogViewer.PageDown()
+		m.logOffset = min(max(0, displayLen-visibleLines), m.logOffset+visibleLines)
 
 	case key.Matches(msg, m.keys.HalfPageUp):
-		m.detailView.LogViewer.HalfPageUp()
+		m.logOffset = max(0, m.logOffset-visibleLines/2)
 
 	case key.Matches(msg, m.keys.HalfPageDown):
-		m.detailView.LogViewer.HalfPageDown()
+		m.logOffset = min(max(0, displayLen-visibleLines), m.logOffset+visibleLines/2)
 
 	case key.Matches(msg, m.keys.Top):
-		m.detailView.LogViewer.GoToTop()
+		m.logOffset = 0
 
 	case key.Matches(msg, m.keys.Bottom):
-		m.detailView.LogViewer.GoToBottom()
-
-	case key.Matches(msg, m.keys.Help):
-		m.detailView.Help.Toggle()
+		m.logOffset = max(0, displayLen-visibleLines)
 	}
 
 	return m, nil
 }
 
-// handleHelpKeys handles key presses in help view
-func (m Model) handleHelpKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch {
-	case key.Matches(msg, m.keys.Quit):
-		return m, tea.Quit
-	case key.Matches(msg, m.keys.Back), key.Matches(msg, m.keys.Help):
-		m.currentView = ViewMain
+func max(a, b int) int {
+	if a > b {
+		return a
 	}
-	return m, nil
+	return b
 }
 
-// updateFilteredRuns updates the filtered runs in the view
-func (m *Model) updateFilteredRuns() {
-	filtered := components.FilterRuns(m.allRuns, m.mainView.StatusFilter, m.mainView.SearchQuery)
-	m.mainView.RunList.SetRuns(filtered)
-}
-
-// View renders the model
-func (m Model) View() string {
-	if m.loading && len(m.allRuns) == 0 {
-		return m.styles.App.Render(m.styles.Dimmed.Render("Loading workflow runs..."))
+func min(a, b int) int {
+	if a < b {
+		return a
 	}
-
-	if m.showFilter {
-		return m.renderWithFilter()
-	}
-
-	switch m.currentView {
-	case ViewMain:
-		return m.mainView.View()
-	case ViewDetail, ViewLogs:
-		return m.detailView.View()
-	case ViewHelp:
-		return m.mainView.Help.Render()
-	}
-
-	return m.mainView.View()
-}
-
-// renderWithFilter renders the view with filter input
-func (m Model) renderWithFilter() string {
-	view := m.mainView.View()
-	filterInput := "\n" + m.styles.Dimmed.Render("Filter: ") + m.textInput.View()
-	return view + filterInput
+	return b
 }

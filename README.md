@@ -1,93 +1,75 @@
 # gh-ci
 
-A terminal UI dashboard for viewing and managing GitHub Actions workflow runs, built as a `gh` CLI extension.
+A terminal dashboard for GitHub Actions, built as a [`gh`](https://cli.github.com/) extension.
 
-## Features
-
-- **Workflow Runs List**: View recent workflow runs across repositories
-- **Color-coded Status**: Visual indicators for success (✓), failure (✗), in-progress (●), and pending (○)
-- **Actions**: Re-run, cancel, and open workflows in browser
-- **Log Viewer**: View job logs with vim-like navigation
-- **Filtering**: Filter by status (all, failed, running, success) and search by name/branch
-- **Auto-refresh**: Automatically refreshes workflow data (configurable interval)
-
-## Installation
-
-### As a gh extension
+## Install
 
 ```bash
-gh extension install jay-418/gh-ci
+gh extension install turkosaurus/gh-ci
 ```
 
-### Build from source
+Or build from source:
 
 ```bash
-git clone https://github.com/jay-418/gh-ci.git
+git clone https://github.com/turkosaurus/gh-ci.git
 cd gh-ci
 go build -o gh-ci
 ```
 
 ## Usage
 
-Run in a directory with a GitHub repository:
+Run from inside a GitHub repository:
 
 ```bash
 gh ci
-# or if built from source
-./gh-ci
 ```
 
-## Keyboard Shortcuts
+Auto-detects your repo from the current directory. See [Configuration](#configuration) to watch multiple repos.
 
-### Navigation
+## Keys
+
+### Main view
+
 | Key | Action |
 |-----|--------|
-| `↑` / `k` | Move up |
-| `↓` / `j` | Move down |
-| `g` / `Home` | Go to top |
-| `G` / `End` | Go to bottom |
-| `PgUp` / `Ctrl+b` | Page up |
-| `PgDn` / `Ctrl+f` | Page down |
-
-### Actions
-| Key | Action |
-|-----|--------|
-| `Enter` | View run details |
-| `l` | View logs |
-| `o` | Open in browser |
+| `↑`/`k`  `↓`/`j` | Navigate |
+| `h`/`←`  `l`/`→` | Move between panels |
+| `g`/`Home`  `G`/`End` | Top / bottom |
+| `PgUp`/`Ctrl+b`  `PgDn`/`Ctrl+f` | Page up / down |
+| `Enter` | Select / open branch picker |
 | `r` | Re-run workflow |
-| `c` | Cancel running workflow |
+| `c` | Cancel (in-progress only) |
+| `d` | Dispatch workflow |
+| `o` | Open in browser |
 | `R` | Refresh |
+| `q`/`Ctrl+c` | Quit |
 
-### Filtering
+### Log viewer
+
 | Key | Action |
 |-----|--------|
-| `/` | Open search filter |
-| `Tab` | Cycle status filter |
-| `Esc` | Clear filter / go back |
-
-### General
-| Key | Action |
-|-----|--------|
-| `?` | Toggle help |
-| `q` / `Ctrl+c` | Quit |
+| `↑`/`k`  `↓`/`j` | Scroll |
+| `g`  `G` | Top / bottom |
+| `Ctrl+u`  `Ctrl+d` | Half page |
+| `/` | Search |
+| `n`  `p` | Next / prev match |
+| `h`/`Esc`/`⌫` | Back |
 
 ## Configuration
 
-The extension auto-detects the repository from your current git directory. For watching multiple repositories, create a config file at `~/.config/gh-ci/config.yml`:
+`~/.config/gh-ci/config.yml`:
 
 ```yaml
 repos:
   - owner/repo1
   - owner/repo2
-refresh_interval: 30  # seconds
+refresh_interval: 30  # seconds (default: 2)
 ```
 
 ## Requirements
 
-- Go 1.21+ (for building from source)
-- GitHub CLI (`gh`) installed and authenticated
-- Git repository with GitHub remote (for auto-detection)
+- [GitHub CLI](https://cli.github.com/) installed and authenticated
+- Go 1.24+ (source builds only)
 
 ## License
 
