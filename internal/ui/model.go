@@ -339,17 +339,6 @@ func (m Model) runDispatch(repo, file, ref string) tea.Cmd {
 	}
 }
 
-func (m Model) repoForWorkflow(name string) string {
-	for _, r := range m.allRuns {
-		if r.Name == name {
-			return r.Repository.FullName
-		}
-	}
-	if len(m.config.Repos) > 0 {
-		return m.config.Repos[0]
-	}
-	return ""
-}
 
 func clearMsg() tea.Cmd {
 	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
@@ -911,10 +900,22 @@ func (m Model) handleMainKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.activePanel == panelWorkflows {
 			if wfName := m.selectedWorkflow(); wfName != "" && wfName != workflowAll {
 				if file, ok := m.workflowFiles[wfName]; ok {
+					var repo string
+					if run := m.selectedRun(); run != nil {
+						// Derive repo from the currently visible run (already filtered by
+						// branch + workflow), so dispatch always targets the right repo.
+						repo = run.Repository.FullName
+					} else if len(m.config.Repos) == 1 {
+						// Local-only workflow (no runs yet) with a single configured repo.
+						repo = m.config.Repos[0]
+					} else {
+						m.message = "cannot dispatch: no runs for this workflow on this branch"
+						return m, clearMsg()
+					}
 					m.dispatchConfirming = true
 					m.dispatchFile = file
 					m.dispatchRef = m.selectedBranch()
-					m.dispatchRepo = m.repoForWorkflow(wfName)
+					m.dispatchRepo = repo
 				}
 			}
 		}
