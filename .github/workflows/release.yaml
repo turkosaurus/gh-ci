@@ -1,4 +1,4 @@
-name: Release Precompiled Binaries
+name: Release Binaries
 
 on:
   push:
