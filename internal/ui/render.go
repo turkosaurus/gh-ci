@@ -237,7 +237,7 @@ func renderList(m Model, width, height int) string {
 		headerStyle = headerStyle.Foreground(styles.ColorPurple)
 	}
 	header := fmt.Sprintf("%-*s  %-*s  %-*s  %*s  %-*s  %-*s",
-		colDispatched, "DISPATCHED",
+		colDispatched, "DISPATCHED (UTC)",
 		colFile, "FILE",
 		colWorkflow, "NAME",
 		colNum, "RUN",
