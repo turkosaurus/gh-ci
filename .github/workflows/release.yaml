@@ -1,56 +1,58 @@
+name: Release
+
 on:
   push:
     tags:
-      - '*'
-permissions:
-  contents: write
+      - 'v*'
 
 jobs:
   release-create:
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
     steps:
+      - uses: actions/checkout@v4
       - name: Create GitHub Release (draft)
-        id: create_release
-        uses: actions/create-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          draft: true
-          prerelease: false
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --draft \
+            --title "${{ github.ref_name }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   test:
-    uses: ./.github/workflows/test.yaml
-
-  build-and-release-assets:
-    needs: [test, release-create]
+    needs: release-create
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Go
-        uses: actions/setup-go@v4
-        with:
-          go-version: 'stable'
-      - name: Build executable
-        run: ./build.sh
-      - name: Upload assets to release
-        uses: softprops/action-gh-release@v1
-        with:
-          upload_url: ${{ needs.release-create.outputs.upload_url }}
-          files: binaries/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run tests
+        run: ./test.sh
 
-  release-publish:
-    needs: build-and-release-assets
+  build-upload:
+    needs: release-create
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: ./build.sh
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./gh-ci*
+
+  release-publish:
+    needs: [test, build-upload]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts
+          path: ./artifacts
+      - name: Upload build artifacts to release
+        run: gh release upload ${{ github.ref_name }} ./artifacts/* --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish GitHub Release
-        run: |
-          gh release edit ${{ github.ref_name }} --draft=false
+        run: gh release edit ${{ github.ref_name }} --draft=false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
