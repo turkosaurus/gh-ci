@@ -51,13 +51,14 @@ type logContextLine struct {
 func fuzzyMatch(line, query string) bool {
 	line = strings.ToLower(line)
 	query = strings.ToLower(query)
+	queryRunes := []rune(query)
 	qi := 0
 	for _, ch := range line {
-		if qi < len(query) && ch == rune(query[qi]) {
+		if qi < len(queryRunes) && ch == queryRunes[qi] {
 			qi++
 		}
 	}
-	return qi == len(query)
+	return qi == len(queryRunes)
 }
 
 // buildLogContext produces a grep -C ctx style context-window view.
