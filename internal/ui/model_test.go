@@ -1,12 +1,19 @@
 package ui
 
 import (
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestScanLocalWorkflows(t *testing.T) {
+	path := ".github/workflows/test_workflow.yml"
+
+	_, err := os.Create(path)
+	require.NoError(t, err, "Failed to create test workflow file")
+	defer os.Remove(path)
+
 	wfs, err := scanLocalWorkflows()
 	require.NoError(t, err, "Expected to find local workflows")
 	require.NotEmpty(t, wfs, "Expected to find at least one local workflow file in .github/workflows")
