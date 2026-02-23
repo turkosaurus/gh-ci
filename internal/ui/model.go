@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -260,7 +259,7 @@ func NewModel(cfg *config.Config) (Model, error) {
 	bi.CharLimit = 100
 	workflowsLocal, err := scanLocalWorkflows()
 	if err != nil {
-		return Model{}, errors.New("scanning local workflows: " + err.Error())
+		return Model{}, fmt.Errorf("scan local workflows: %w", err)
 	}
 	return Model{
 		config:         cfg,
