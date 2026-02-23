@@ -1,6 +1,9 @@
 package ui
 
 import (
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,18 +30,16 @@ const (
 	ScreenLogs
 )
 
-// workflowAll is the sentinel entry prepended to the workflow list meaning "show all workflows".
-const workflowAll = "*"
-
-// Panel indices for activePanel.
 const (
-	panelWorkflows = 0
-	panelRuns      = 1
-	panelDetail    = 2
+	panelWorkflows = iota
+	panelRuns
+	panelDetail
 )
 
-// logViewOverhead is the number of rows consumed by header, spacing, and help bar in the log view.
-const logViewOverhead = 4
+const (
+	workflowAll     = "*" // "show all workflows"
+	logViewOverhead = 4   // number of rows consumed by header, spacing, and help bar in the log view.
+)
 
 // logContextLine is one display row in the context-window log view.
 type logContextLine struct {
@@ -210,20 +211,27 @@ func currentGitBranch() string {
 	return strings.TrimSpace(string(out))
 }
 
-func scanLocalWorkflows() []types.WorkflowDef {
+var ErrNoLocalWorkflows = errors.New("no local workflows found")
+
+// scanLocalWorkflows looks for workflow definition files
+// in .github/workflows/ and returns their names and filenames.
+func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		return nil
+		return nil, fmt.Errorf("no parseable git root: %w", err)
 	}
 	root := strings.TrimSpace(string(out))
 
 	var defs []types.WorkflowDef
 	for _, pattern := range []string{"*.yaml", "*.yml"} {
 		matches, _ := filepath.Glob(filepath.Join(root, ".github", "workflows", pattern))
+		if len(matches) == 0 {
+			return nil, ErrNoLocalWorkflows
+		}
 		for _, path := range matches {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("read workflow file %q: %w", path, err)
 			}
 			var wf struct {
 				Name string `yaml:"name"`
@@ -236,9 +244,10 @@ func scanLocalWorkflows() []types.WorkflowDef {
 			}
 			file := filepath.Base(path)
 			defs = append(defs, types.WorkflowDef{Name: name, File: file})
+			slog.Debug("discovered local workflow definition", "name", name, "file", file)
 		}
 	}
-	return defs
+	return defs, nil
 }
 
 func NewModel(cfg *config.Config) Model {
@@ -248,6 +257,11 @@ func NewModel(cfg *config.Config) Model {
 	bi := textinput.New()
 	bi.Placeholder = "filter branches..."
 	bi.CharLimit = 100
+	workflowsLocal, err := scanLocalWorkflows()
+	if err != nil && !errors.Is(err, ErrNoLocalWorkflows) {
+		slog.Warn("failed to scan local workflows; continuing without them", "error", err)
+		workflowsLocal = nil
+	}
 	return Model{
 		config:         cfg,
 		client:         gh.NewClient(),
@@ -257,7 +271,7 @@ func NewModel(cfg *config.Config) Model {
 		branchInput:    bi,
 		loading:        true,
 		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
-		localDefs:      scanLocalWorkflows(),
+		localDefs:      workflowsLocal,
 		workflowFiles:  make(map[string]string),
 		defaultBranch:  cfg.DefaultPrimaryBranch,
 		localBranch:    currentGitBranch(),

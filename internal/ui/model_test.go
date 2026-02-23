@@ -2,7 +2,17 @@ package ui
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestScanLocalWorkflows(t *testing.T) {
+	wfs := scanLocalWorkflows()
+	for _, wf := range wfs {
+		t.Logf("Found workflow: %s", wf.File)
+	}
+	require.NotEmpty(t, wfs, "Expected to find at least one local workflow file in .github/workflows")
+}
 
 func TestFuzzyMatch(t *testing.T) {
 	tests := []struct {
