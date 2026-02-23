@@ -12,8 +12,8 @@ build_target() {
     OUT="gh-${EXTENSION}-${GOOS}-${GOARCH}${EXT}"
 	echo "$OUT building..."
     env GOOS="$GOOS" GOARCH="$GOARCH" \
-        go build \
-        -ldflags="-s -w -X internal.ui=$VERSION" \
+    go build \
+        -ldflags "-s -w -X github.com/turkosaurus/gh-ci/internal/ui.Version=${VERSION}" \
         -o "${OUT}" .
 }
 
