@@ -71,6 +71,9 @@ func renderMain(m Model) string {
 	)
 }
 
+// override at build time
+//
+//	go build -ldflags "-X 'github.com/turkosaurus/gh-ci/internal/ui.Version=1.2.3'"
 var Version string = "dev"
 
 func renderTitle(m Model, width int) string {

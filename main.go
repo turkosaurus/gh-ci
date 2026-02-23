@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,12 +30,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create and run the Bubble Tea program
+	logger, err := newFileLogger()
+	if err != nil {
+		fmt.Sprintf("fatal: cannot initialize logger: %v", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
+
 	model := ui.NewModel(cfg)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running program: %v\n", err)
+		fmt.Fprintf(os.Stderr, "fatal: run: %v\n", err)
 		os.Exit(1)
 	}
 }
