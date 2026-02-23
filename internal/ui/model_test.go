@@ -8,12 +8,18 @@ import (
 )
 
 func TestScanLocalWorkflows(t *testing.T) {
-	path := ".github/workflows/test_workflow.yml"
+	_, err := os.Stat(".github/workflows")
+	// CI will not have the dir when running tests
+	if os.IsNotExist(err) {
+		t.Log(".github/workflows directory does not exist, creating test workflow file")
+		err := os.MkdirAll(".github/workflows", 0755)
+		require.NoError(t, err, "Failed to create .github/workflows directory")
+		_, err = os.Create(".github/workflows/test_workflow.yml")
+		require.NoError(t, err, "Failed to create test workflow file")
+		defer os.RemoveAll(".github")
+	}
 
-	_, err := os.Create(path)
-	require.NoError(t, err, "Failed to create test workflow file")
-	defer os.Remove(path)
-
+	// we expect to see this repo's own workflows
 	wfs, err := scanLocalWorkflows()
 	require.NoError(t, err, "Expected to find local workflows")
 	require.NotEmpty(t, wfs, "Expected to find at least one local workflow file in .github/workflows")

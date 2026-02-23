@@ -37,7 +37,11 @@ func main() {
 	}
 	slog.SetDefault(logger)
 
-	model := ui.NewModel(cfg)
+	model, err := ui.NewModel(cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fatal: cannot initialize model: %v\n", err)
+		os.Exit(1)
+	}
 	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {

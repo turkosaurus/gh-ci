@@ -211,8 +211,6 @@ func currentGitBranch() string {
 	return strings.TrimSpace(string(out))
 }
 
-var ErrNoLocalWorkflows = errors.New("no local workflows found")
-
 // scanLocalWorkflows looks for workflow definition files
 // in .github/workflows/ and returns their names and filenames.
 func scanLocalWorkflows() ([]types.WorkflowDef, error) {
@@ -226,7 +224,7 @@ func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 	for _, pattern := range []string{"*.yaml", "*.yml"} {
 		matches, _ := filepath.Glob(filepath.Join(root, ".github", "workflows", pattern))
 		if len(matches) == 0 {
-			return nil, ErrNoLocalWorkflows
+			continue
 		}
 		for _, path := range matches {
 			data, err := os.ReadFile(path)
@@ -247,10 +245,13 @@ func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 			slog.Debug("discovered local workflow definition", "name", name, "file", file)
 		}
 	}
+	if len(defs) == 0 {
+		slog.Debug("no local workflow definitions found in .github/workflows")
+	}
 	return defs, nil
 }
 
-func NewModel(cfg *config.Config) Model {
+func NewModel(cfg *config.Config) (Model, error) {
 	ti := textinput.New()
 	ti.Placeholder = "search logs..."
 	ti.CharLimit = 100
@@ -258,9 +259,8 @@ func NewModel(cfg *config.Config) Model {
 	bi.Placeholder = "filter branches..."
 	bi.CharLimit = 100
 	workflowsLocal, err := scanLocalWorkflows()
-	if err != nil && !errors.Is(err, ErrNoLocalWorkflows) {
-		slog.Warn("failed to scan local workflows; continuing without them", "error", err)
-		workflowsLocal = nil
+	if err != nil {
+		return Model{}, errors.New("scanning local workflows: " + err.Error())
 	}
 	return Model{
 		config:         cfg,
@@ -275,7 +275,7 @@ func NewModel(cfg *config.Config) Model {
 		workflowFiles:  make(map[string]string),
 		defaultBranch:  cfg.DefaultPrimaryBranch,
 		localBranch:    currentGitBranch(),
-	}
+	}, nil
 }
 
 func (m Model) Init() tea.Cmd {
