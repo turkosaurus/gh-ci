@@ -291,7 +291,7 @@ func (m Model) loadRuns() tea.Cmd {
 	return func() tea.Msg {
 		var all []types.WorkflowRun
 		for _, repo := range m.config.Repos {
-			runs, err := m.client.ListWorkflowRuns(repo, 100)
+			runs, err := m.client.ListWorkflowRuns(repo, 30)
 			if err != nil {
 				return runsLoadedMsg{err: err}
 			}
