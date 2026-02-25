@@ -28,6 +28,14 @@ type (
 		message string
 		err     error
 	}
+	localDefsLoadedMsg struct {
+		defs []types.WorkflowDef
+		err  error
+	}
+	runsPartialMsg struct {
+		runs []types.WorkflowRun
+		err  error
+	}
 	tickMsg     time.Time
 	clearMsgMsg struct{}
 )

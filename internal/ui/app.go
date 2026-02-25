@@ -1,9 +1,7 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -38,14 +36,14 @@ type App struct {
 
 	screen screen
 
-	allRuns       []types.WorkflowRun
-	localDefs     []types.WorkflowDef
+	runs      Fetchable[[]types.WorkflowRun]
+	localDefs Fetchable[[]types.WorkflowDef]
+
 	workflowFiles map[string]string
 	defaultBranch string
 	localBranch   string
 
 	width, height int
-	loading       bool
 	message       string
 
 	dashboard Dashboard
@@ -56,11 +54,6 @@ func NewApp(cfg *config.Config) App {
 	s := styles.DefaultStyles()
 	k := keys.DefaultKeyMap()
 	client := gh.NewClient()
-	workflowsLocal, err := scanLocalWorkflows()
-	if err != nil && !errors.Is(err, ErrNoLocalWorkflows) {
-		slog.Warn("failed to scan local workflows; continuing without them", "error", err)
-		workflowsLocal = nil
-	}
 	defaultBranch := cfg.DefaultPrimaryBranch
 	localBranch := currentGitBranch()
 	return App{
@@ -68,8 +61,8 @@ func NewApp(cfg *config.Config) App {
 		client:        client,
 		styles:        s,
 		keys:          k,
-		loading:       true,
-		localDefs:     workflowsLocal,
+		runs:          Fetchable[[]types.WorkflowRun]{Fetching: true},
+		localDefs:     Fetchable[[]types.WorkflowDef]{Fetching: true},
 		workflowFiles: make(map[string]string),
 		defaultBranch: defaultBranch,
 		localBranch:   localBranch,
@@ -79,7 +72,11 @@ func NewApp(cfg *config.Config) App {
 }
 
 func (a App) Init() tea.Cmd {
-	return tea.Batch(loadRuns(a.client, a.config.Repos), tick(a.config.RefreshInterval))
+	return tea.Batch(
+		loadLocalDefs(),
+		loadRunsPartial(a.client, a.config.Repos),
+		tick(a.config.RefreshInterval),
+	)
 }
 
 func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -106,30 +103,42 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, cmd
 		}
 
-	case runsLoadedMsg:
-		a.loading = false
+	case localDefsLoadedMsg:
 		if msg.err != nil {
+			a.localDefs.SetError(msg.err)
+		} else {
+			a.localDefs.SetData(msg.defs)
+		}
+		a.deriveWorkflowFiles()
+		cmd := a.dashboard.SetRuns(a.runs.Data, a.localDefs.Data, a.workflowFiles)
+		if cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+
+	case runsPartialMsg:
+		if msg.err != nil {
+			a.runs.SetError(msg.err)
 			a.message = "error: " + msg.err.Error()
 		} else {
-			a.allRuns = msg.runs
-			// populate workflowFiles (name → filename) from path field in run response
-			for _, r := range a.allRuns {
-				if r.Path == "" {
-					continue
-				}
-				if _, ok := a.workflowFiles[r.Name]; ok {
-					continue
-				}
-				parts := strings.Split(r.Path, "/")
-				a.workflowFiles[r.Name] = parts[len(parts)-1]
+			a.runs.SetPartial(msg.runs)
+			a.deriveWorkflowFiles()
+			cmd := a.dashboard.SetRuns(a.runs.Data, a.localDefs.Data, a.workflowFiles)
+			if cmd != nil {
+				cmds = append(cmds, cmd)
 			}
-			// also populate from local defs (covers workflows with no runs)
-			for _, def := range a.localDefs {
-				if _, ok := a.workflowFiles[def.Name]; !ok {
-					a.workflowFiles[def.Name] = def.File
-				}
+			cmds = append(cmds, loadRuns(a.client, a.config.Repos))
+		}
+
+	case runsLoadedMsg:
+		if msg.err != nil {
+			a.runs.SetError(msg.err)
+			if !a.runs.HasData() {
+				a.message = "error: " + msg.err.Error()
 			}
-			cmd := a.dashboard.SetRuns(a.allRuns, a.localDefs, a.workflowFiles)
+		} else {
+			a.runs.SetData(msg.runs)
+			a.deriveWorkflowFiles()
+			cmd := a.dashboard.SetRuns(a.runs.Data, a.localDefs.Data, a.workflowFiles)
 			if cmd != nil {
 				cmds = append(cmds, cmd)
 			}
@@ -166,6 +175,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, clearMsg(), loadRuns(a.client, a.config.Repos))
 
 	case tickMsg:
+		a.runs.SetFetching()
 		cmds = append(cmds, loadRuns(a.client, a.config.Repos), tick(a.config.RefreshInterval))
 
 	case backToMainMsg:
@@ -179,13 +189,30 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a App) View() string {
-	if a.loading && len(a.allRuns) == 0 {
-		return a.styles.Dimmed.Render("loading workflow runs...")
-	}
 	if a.screen == screenLogs {
 		return a.logViewer.View(a.width, a.height)
 	}
-	return a.dashboard.View(a.width, a.height, a.message, a.loading)
+	return a.dashboard.View(a.width, a.height, a.message, a.runs.IsFetching())
+}
+
+// deriveWorkflowFiles populates workflowFiles (name → filename) from
+// run paths and local defs.
+func (a *App) deriveWorkflowFiles() {
+	for _, r := range a.runs.Data {
+		if r.Path == "" {
+			continue
+		}
+		if _, ok := a.workflowFiles[r.Name]; ok {
+			continue
+		}
+		parts := strings.Split(r.Path, "/")
+		a.workflowFiles[r.Name] = parts[len(parts)-1]
+	}
+	for _, def := range a.localDefs.Data {
+		if _, ok := a.workflowFiles[def.Name]; !ok {
+			a.workflowFiles[def.Name] = def.File
+		}
+	}
 }
 
 // bindingHelp renders a single key binding as a "key  desc" help item.

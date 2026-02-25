@@ -8,6 +8,27 @@ import (
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
 
+func loadLocalDefs() tea.Cmd {
+	return func() tea.Msg {
+		defs, err := scanLocalWorkflows()
+		return localDefsLoadedMsg{defs: defs, err: err}
+	}
+}
+
+func loadRunsPartial(client gh.Client, repos []string) tea.Cmd {
+	return func() tea.Msg {
+		var all []types.WorkflowRun
+		for _, repo := range repos {
+			runs, err := client.ListWorkflowRuns(repo, 10)
+			if err != nil {
+				return runsPartialMsg{err: err}
+			}
+			all = append(all, runs...)
+		}
+		return runsPartialMsg{runs: all}
+	}
+}
+
 func loadRuns(client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
 		var all []types.WorkflowRun

@@ -549,7 +549,7 @@ func (d Dashboard) View(width, height int, message string, loading bool) string 
 	body := lipgloss.JoinHorizontal(lipgloss.Top,
 		lipgloss.NewStyle().Width(workflowW).Height(bodyH).Render(d.renderWorkflows(workflowW, bodyH)),
 		sep,
-		lipgloss.NewStyle().Width(runsW).Height(bodyH).Render(d.renderList(runsW, bodyH)),
+		lipgloss.NewStyle().Width(runsW).Height(bodyH).Render(d.renderList(runsW, bodyH, loading)),
 		sep,
 		lipgloss.NewStyle().Width(detailW).Height(bodyH).Render(d.renderDetail(detailW)),
 	)
@@ -694,10 +694,13 @@ func (d Dashboard) renderWorkflows(width, height int) string {
 	return strings.Join(rows, "\n")
 }
 
-func (d Dashboard) renderList(width, height int) string {
+func (d Dashboard) renderList(width, height int, loading bool) string {
 	active := d.activePanel == panelRuns
 
 	if len(d.filteredRuns) == 0 {
+		if loading {
+			return d.styles.Dimmed.Render("loading runs...")
+		}
 		return d.styles.Dimmed.Render("no workflow runs")
 	}
 
