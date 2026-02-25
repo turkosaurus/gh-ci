@@ -11,7 +11,7 @@ ts() {
     date -u +"%Y%m%dT%H%M%SZ"
 }
 info() { 
-    echo "ℹ️ [$(ts)] INF: $*"
+    echo "✳️ [$(ts)] INF: $*"
 }
 error() { 
     echo "❌ [$(ts)] ERR: $*" >&2
@@ -34,7 +34,7 @@ build_target() {
         error "${OUT} FAILED"
         return 1 
     else
-        success "$✅ {OUT} built successfully!"
+        success "$OUT built successfully!"
     fi
 }
 
@@ -59,7 +59,13 @@ targets() {
 
 # Download once, then build many times.
 info "fetching dependencies..."
-go mod download
+
+if ! go mod download; then
+    error "failed to fetch dependencies"
+    exit 1
+else
+    success "dependencies fetched!"
+fi
 
 pids=""
 targets "$@"
