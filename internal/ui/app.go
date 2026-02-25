@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/turkosaurus/gh-ci/internal/config"
 	"github.com/turkosaurus/gh-ci/internal/gh"
@@ -55,7 +55,7 @@ func NewApp(cfg *config.Config) App {
 	k := keys.DefaultKeyMap()
 	client := gh.NewClient()
 	defaultBranch := cfg.DefaultPrimaryBranch
-	localBranch := currentGitBranch()
+	localBranch := gitBranch()
 	return App{
 		config:        cfg,
 		client:        client,

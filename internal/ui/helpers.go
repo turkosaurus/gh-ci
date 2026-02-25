@@ -1,12 +1,12 @@
 package ui
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -111,34 +111,41 @@ func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (w
 	for b := range brSeen {
 		branches = append(branches, b)
 	}
-	sort.Strings(branches)
+	slices.Sort(branches)
 	return
 }
 
-func currentGitBranch() string {
-	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+func gitRoot() string {
+	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
+		slog.Error("determine git root: %w", err)
 		return ""
 	}
 	return strings.TrimSpace(string(out))
 }
 
-var ErrNoLocalWorkflows = errors.New("no local workflows found")
+func gitBranch() string {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		slog.Error("determine git branch: %w", err)
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+var workflowDirGitHub = filepath.Join(".github", "workflows")
 
 // scanLocalWorkflows looks for workflow definition files
 // in .github/workflows/ and returns their names and filenames.
 func scanLocalWorkflows() ([]types.WorkflowDef, error) {
-	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
-	if err != nil {
-		return nil, fmt.Errorf("no parseable git root: %w", err)
-	}
-	root := strings.TrimSpace(string(out))
-
 	var defs []types.WorkflowDef
 	for _, pattern := range []string{"*.yaml", "*.yml"} {
-		matches, _ := filepath.Glob(filepath.Join(root, ".github", "workflows", pattern))
+		matches, err := filepath.Glob(filepath.Join(gitRoot(), workflowDirGitHub, pattern))
+		if err != nil {
+			return nil, fmt.Errorf("glob workflow files %q: %w", pattern, err)
+		}
 		if len(matches) == 0 {
-			return nil, ErrNoLocalWorkflows
+			continue
 		}
 		for _, path := range matches {
 			data, err := os.ReadFile(path)
@@ -148,17 +155,27 @@ func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 			var wf struct {
 				Name string `yaml:"name"`
 			}
-			_ = yaml.Unmarshal(data, &wf)
-			name := wf.Name
-			if name == "" {
-				ext := filepath.Ext(path)
-				name = strings.TrimSuffix(filepath.Base(path), ext)
+			err = yaml.Unmarshal(data, &wf)
+			if err != nil {
+				slog.Error(fmt.Errorf("unmarshal workflow: %w", err).Error(),
+					"file", path,
+				)
 			}
 			file := filepath.Base(path)
-			defs = append(defs, types.WorkflowDef{Name: name, File: file})
+			var name string
+			if wf.Name != "" {
+				name = wf.Name
+			} else {
+				name = file
+			}
+			defs = append(defs, types.WorkflowDef{
+				Name: name,
+				File: file,
+			})
 			slog.Debug("discovered local workflow definition", "name", name, "file", file)
 		}
 	}
+	slog.Debug("returning local workflows", "count", len(defs))
 	return defs, nil
 }
 

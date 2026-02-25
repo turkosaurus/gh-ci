@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"log/slog"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,6 +12,18 @@ import (
 func loadLocalDefs() tea.Cmd {
 	return func() tea.Msg {
 		defs, err := scanLocalWorkflows()
+		if err != nil {
+			slog.Error("fetch local: %w", err)
+		}
+		slog.Debug("scanned local workflow definitions",
+			"count", len(defs),
+		)
+		for _, def := range defs {
+			slog.Debug("found workflow definition",
+				"name", def.Name,
+			)
+		}
+
 		return localDefsLoadedMsg{defs: defs, err: err}
 	}
 }
