@@ -30,9 +30,41 @@ func newFileLogger() (*slog.Logger, error) {
 	if os.Getenv("DEBUG") != "" {
 		level = slog.LevelDebug
 	}
-	slog.Debug("initialized logger", "logFile", logFile, "level", level.String())
 
 	handler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: level})
 	logger := slog.New(handler)
+	logger.Debug("initialized text file logger",
+		"path", logFile,
+		"level", level.String(),
+	)
+
+	// TODO: truncate old logs
+	// maxAge := 1 * time.Minute
+	// // scan through and delete old log entries
+	// scanner := bufio.NewScanner(f)
+	// for scanner.Scan() {
+	// 	line := scanner.Text()
+	// 	fields := strings.Fields(line)
+	// 	if len(fields) == 0 {
+	// 		continue
+	// 	}
+	// 	timestampStr := fields[0]
+	// 	t, err := time.Parse(time.RFC3339, timestampStr)
+	// 	if err != nil {
+	// 		slog.Error("log rotate: parse log timestamp",
+	// 			"file", logFile,
+	// 			"line", line,
+	// 			"error", err,
+	// 		)
+	// 		continue
+	// 	}
+	// 	if time.Since(t) > maxAge {
+	// 		slog.Info("log rotate: old log entry",
+	// 			"file", logFile,
+	// 			"line", line,
+	// 			"age", time.Since(t),
+	// 		)
+	// 	}
+	// }
 	return logger, nil
 }

@@ -36,6 +36,10 @@ func main() {
 		os.Exit(1)
 	}
 	slog.SetDefault(logger)
+	slog.Info("starting gh-ci",
+		"repos", cfg.Repos,
+		"refresh_interval", cfg.RefreshInterval,
+	)
 
 	app := ui.NewApp(cfg)
 	p := tea.NewProgram(app, tea.WithAltScreen())
