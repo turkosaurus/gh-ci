@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -89,30 +88,29 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 	return
 }
 
-// deriveWorkflows collects unique workflow names (sorted, prefixed with workflowAll)
+// deriveLists collects unique workflow names (sorted, prefixed with workflowAll)
 // and unique branch names (sorted, no sentinel — all entries are real branches).
 // localDefs are merged in so workflows with no runs still appear.
-func deriveWorkflows(runs []types.WorkflowRun, localDefs []types.WorkflowDef) (workflows []string, branches []string) {
-	wfSeen := map[string]bool{}
-	brSeen := map[string]bool{}
-	for _, r := range runs {
-		wfSeen[r.Name] = true
-		brSeen[r.HeadBranch] = true
-	}
+func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]string, []string) {
+	workflowList := []string{workflowAll} // initiate list with "all" selector
+	// append all local names first
 	for _, def := range localDefs {
-		wfSeen[def.Name] = true
+		workflowList = append(workflowList, def.Name)
 	}
-	for w := range wfSeen {
-		workflows = append(workflows, w)
+	var branchList []string
+	for _, wf := range runs {
+		if !slices.Contains(branchList, wf.HeadBranch) {
+			branchList = append(branchList, wf.HeadBranch)
+		}
+		if !slices.Contains(workflowList, wf.Name) {
+			workflowList = append(workflowList, wf.Name)
+		}
 	}
-	sort.Strings(workflows)
-	workflows = append([]string{workflowAll}, workflows...)
-
-	for b := range brSeen {
-		branches = append(branches, b)
-	}
-	slices.Sort(branches)
-	return
+	slog.Debug("derrived lists",
+		"workflowList", workflowList,
+		"branchList", branchList,
+	)
+	return workflowList, branchList
 }
 
 func gitRoot() string {

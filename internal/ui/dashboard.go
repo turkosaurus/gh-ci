@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/turkosaurus/gh-ci/internal/config"
 	"github.com/turkosaurus/gh-ci/internal/gh"
@@ -86,7 +86,7 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 	} else if d.branchIdx < len(d.availableBranches) {
 		prevBranch = d.availableBranches[d.branchIdx]
 	}
-	_, d.availableBranches = deriveWorkflows(d.allRuns, d.localDefs)
+	_, d.availableBranches = deriveLists(d.localDefs, d.allRuns)
 	// ensure both the configured primary branch and the local checkout are
 	// always present, even when they have no runs yet
 	for _, branch := range []string{d.defaultBranch, d.localBranch} {
