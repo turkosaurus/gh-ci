@@ -103,7 +103,10 @@ func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]str
 			branchList = append(branchList, wf.HeadBranch)
 		}
 		if !slices.Contains(workflowList, wf.Name) {
-			workflowList = append(workflowList, wf.Name)
+			// TODO: merge on name or file path
+			if !slices.Contains(workflowList, filepath.Base(wf.Path)) {
+				workflowList = append(workflowList, wf.Name)
+			}
 		}
 	}
 	slog.Debug("derrived lists",

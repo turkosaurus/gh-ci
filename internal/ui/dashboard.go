@@ -674,9 +674,9 @@ func (d Dashboard) renderList(width, height int, loading bool) string {
 
 	if len(d.filteredRuns) == 0 {
 		if loading {
-			return d.styles.Dimmed.Render("loading runs...")
+			return d.styles.Dimmed.Render("🔶 workflow runs loading")
 		}
-		return d.styles.Dimmed.Render("no workflow runs")
+		return d.styles.Dimmed.Render("🟧 workflow runs empty")
 	}
 
 	const colOk, colNum, colDur, colFile, colDispatched = 2, 6, 7, 14, 16
