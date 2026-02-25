@@ -116,7 +116,7 @@ func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]str
 func gitRoot() string {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
-		slog.Error("determine git root: %w", err)
+		slog.Error("determine git root", "error", err)
 		return ""
 	}
 	return strings.TrimSpace(string(out))
@@ -125,7 +125,7 @@ func gitRoot() string {
 func gitBranch() string {
 	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
-		slog.Error("determine git branch: %w", err)
+		slog.Error("determine git branch", "error", err)
 		return ""
 	}
 	return strings.TrimSpace(string(out))

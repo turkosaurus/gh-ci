@@ -79,14 +79,17 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 	d.localDefs = localDefs
 	d.workflowFiles = workflowFiles
 
-	// Preserve selected branch by name; on first load start on local checkout
+	// preserve cursors by name before re-deriving lists
 	prevBranch := ""
 	if d.availableBranches == nil {
 		prevBranch = d.localBranch
 	} else if d.branchIdx < len(d.availableBranches) {
 		prevBranch = d.availableBranches[d.branchIdx]
 	}
-	_, d.availableBranches = deriveLists(d.localDefs, d.allRuns)
+	prevWf := d.selectedWorkflow()
+
+	d.workflows, d.availableBranches = deriveLists(d.localDefs, d.allRuns)
+
 	// ensure both the configured primary branch and the local checkout are
 	// always present, even when they have no runs yet
 	for _, branch := range []string{d.defaultBranch, d.localBranch} {
@@ -105,6 +108,8 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 			sort.Strings(d.availableBranches)
 		}
 	}
+
+	// restore branch cursor
 	d.branchIdx = 0
 	for i, b := range d.availableBranches {
 		if b == prevBranch {
@@ -112,6 +117,20 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 			break
 		}
 	}
+
+	// restore workflow cursor
+	if prevWf != "" {
+		d.workflowCursor = 1
+		for i, w := range d.workflows {
+			if w == prevWf {
+				d.workflowCursor = i + 1
+				break
+			}
+		}
+	} else if d.workflowCursor > len(d.workflows) {
+		d.workflowCursor = 0
+	}
+
 	d.applyFilter()
 	if run := d.selectedRun(); run != nil {
 		return loadJobs(d.client, run.Repository.FullName, run.ID)
@@ -198,72 +217,28 @@ func (d Dashboard) selectedBranch() string {
 }
 
 func (d *Dashboard) applyFilter() {
-	runs := d.allRuns
-
-	// Apply branch filter — always active since there is no "all branches" option.
-	branchRuns := runs
+	// filter by branch
+	var runs []types.WorkflowRun
 	if d.branchIdx < len(d.availableBranches) {
 		branch := d.availableBranches[d.branchIdx]
-		var br []types.WorkflowRun
-		for _, r := range runs {
-			if r.HeadBranch == branch {
-				br = append(br, r)
-			}
-		}
-		branchRuns = br
-	}
-
-	// Re-derive workflow list from branch-filtered runs, plus any local def that
-	// has never run anywhere (so it can be dispatched from any branch).
-	wfSeen := map[string]bool{}
-	for _, r := range branchRuns {
-		wfSeen[r.Name] = true
-	}
-	selectedBranch := ""
-	if d.branchIdx < len(d.availableBranches) {
-		selectedBranch = d.availableBranches[d.branchIdx]
-	}
-	if selectedBranch == d.localBranch && d.localBranch != "" {
-		hasRunsAnywhere := map[string]bool{}
 		for _, r := range d.allRuns {
-			hasRunsAnywhere[r.Name] = true
-		}
-		for _, def := range d.localDefs {
-			if !hasRunsAnywhere[def.Name] {
-				wfSeen[def.Name] = true
+			if r.HeadBranch == branch {
+				runs = append(runs, r)
 			}
 		}
+	} else {
+		runs = d.allRuns
 	}
-	var workflows []string
-	for w := range wfSeen {
-		workflows = append(workflows, w)
-	}
-	sort.Strings(workflows)
-	workflows = append([]string{workflowAll}, workflows...)
-	// Preserve workflowCursor by name across re-derives.
-	if prevWf := d.selectedWorkflow(); prevWf != "" {
-		d.workflowCursor = 1 // default to workflowAll if not found
-		for i, w := range workflows {
-			if w == prevWf {
-				d.workflowCursor = i + 1
-				break
-			}
-		}
-	} else if d.workflowCursor > len(workflows) {
-		d.workflowCursor = 0
-	}
-	d.workflows = workflows
 
-	// Apply workflow filter.
-	runs = branchRuns
+	// filter by workflow
 	if wfName := d.selectedWorkflow(); wfName != "" && wfName != workflowAll {
-		var wf []types.WorkflowRun
+		var filtered []types.WorkflowRun
 		for _, r := range runs {
 			if r.Name == wfName {
-				wf = append(wf, r)
+				filtered = append(filtered, r)
 			}
 		}
-		runs = wf
+		runs = filtered
 	}
 
 	d.filteredRuns = runs

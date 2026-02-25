@@ -13,7 +13,7 @@ func loadLocalDefs() tea.Cmd {
 	return func() tea.Msg {
 		defs, err := scanLocalWorkflows()
 		if err != nil {
-			slog.Error("fetch local: %w", err)
+			slog.Error("fetch local", "error", err)
 		}
 		slog.Debug("scanned local workflow definitions",
 			"count", len(defs),
