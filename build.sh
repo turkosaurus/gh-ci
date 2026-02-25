@@ -3,20 +3,43 @@
 set -e
 
 EXTENSION="ci"
-VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo 'dev')}"
+TS_STRING="$(date -u +"%Y%m%dT%H%M%SZ")"
+FALLBACK_VERSION="dev-${TS_STRING}"
+VERSION="${VERSION:-$(git describe --tags --always 2>/dev/null || echo "$FALLBACK_VERSION")}"
+
+ts() { 
+    date -u +"%Y%m%dT%H%M%SZ"
+}
+info() { 
+    echo "ℹ️ [$(ts)] INF: $*"
+}
+error() { 
+    echo "❌ [$(ts)] ERR: $*" >&2
+}
+success() { 
+    echo "✅ [$(ts)] YAY: $*"
+}
 
 build_target() {
     GOOS=$1
     GOARCH=$2
     EXT=$3
     OUT="gh-${EXTENSION}-${GOOS}-${GOARCH}${EXT}"
-	echo "$OUT building..."
-    env GOOS="$GOOS" GOARCH="$GOARCH" \
+    info "$OUT building..."
+    # strip symbols to minimize binary size, and override default version "dev" with git tag
+    if ! env GOOS="$GOOS" GOARCH="$GOARCH" \
     go build \
         -ldflags "-s -w -X github.com/turkosaurus/gh-ci/internal/ui.Version=${VERSION}" \
-        -o "${OUT}" .
+        -o "${OUT}" .; then
+        error "${OUT} FAILED"
+        return 1 
+    else
+        success "$✅ {OUT} built successfully!"
+    fi
 }
 
+# Build all the platforms, because a TUI client
+# could be running on anything.
 targets() {
     set -- \
         linux amd64 '' \
@@ -34,6 +57,8 @@ targets() {
     done
 }
 
+# Download once, then build many times.
+info "fetching dependencies..."
 go mod download
 
 pids=""
@@ -44,4 +69,9 @@ for pid in $pids; do
     wait "$pid" || fail=1
 done
 
+if [ "$fail" -ne 0 ]; then
+    error "build failed"
+else
+    success "all builds succeeded!"
+fi
 exit $fail
