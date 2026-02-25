@@ -32,13 +32,13 @@ func main() {
 
 	logger, err := newFileLogger()
 	if err != nil {
-		fmt.Sprintf("fatal: cannot initialize logger: %v", err)
+		fmt.Fprintf(os.Stderr, "fatal: cannot initialize logger: %v\n", err)
 		os.Exit(1)
 	}
 	slog.SetDefault(logger)
 
-	model := ui.NewModel(cfg)
-	p := tea.NewProgram(model, tea.WithAltScreen())
+	app := ui.NewApp(cfg)
+	p := tea.NewProgram(app, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: run: %v\n", err)
