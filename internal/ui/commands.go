@@ -32,7 +32,7 @@ func loadRunsPartial(client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
 		var all []types.WorkflowRun
 		for _, repo := range repos {
-			runs, err := client.ListWorkflowRuns(repo, 10)
+			runs, err := client.ListWorkflowRuns(repo, 1)
 			if err != nil {
 				return runsPartialMsg{err: err}
 			}
@@ -46,7 +46,8 @@ func loadRuns(client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
 		var all []types.WorkflowRun
 		for _, repo := range repos {
-			runs, err := client.ListWorkflowRuns(repo, 100)
+			// TODO: paginate, but also filter by type and filter by date (max age, etc)
+			runs, err := client.ListWorkflowRuns(repo, 10)
 			if err != nil {
 				return runsLoadedMsg{err: err}
 			}

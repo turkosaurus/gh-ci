@@ -6,13 +6,14 @@ import (
 	"net/http"
 	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
 
 // Client is the interface for GitHub API operations.
 type Client interface {
-	ListWorkflowRuns(repo string, perPage int) ([]types.WorkflowRun, error)
+	ListWorkflowRuns(repo string, pageMax int) ([]types.WorkflowRun, error)
 	GetJobs(repo string, runID int64) ([]types.Job, error)
 	GetJobLogs(repo string, jobID int64) (string, error)
 	RerunWorkflow(repo string, runID int64, debug bool) error
@@ -22,17 +23,25 @@ type Client interface {
 	OpenInBrowser(url string) error
 }
 
-// CLIClient is the concrete gh-CLI-backed implementation of Client.
-type CLIClient struct{}
+// ghClient is the concrete gh-CLI-backed implementation of Client.
+type ghClient struct{}
 
 // NewClient creates a new GitHub API client backed by the gh CLI.
 func NewClient() Client {
-	return &CLIClient{}
+	return &ghClient{}
 }
 
 // ListWorkflowRuns fetches workflow runs for a repository
-func (c *CLIClient) ListWorkflowRuns(repo string, perPage int) ([]types.WorkflowRun, error) {
-	endpoint := fmt.Sprintf("repos/%s/actions/runs?per_page=%d", repo, perPage)
+// TODO: this branch is current, not selected
+func (c *ghClient) ListWorkflowRuns(repo string, pageMax int) ([]types.WorkflowRun, error) {
+	// YYYY-MM-DD
+	fmtString := "2006-01-02"
+	t := time.Now().Add(-2 * 7 * 24 * time.Hour).Format(fmtString)
+	tStr := fmt.Sprintf(">%s", t)
+
+	// TODO: paginate
+	// var allRuns []types.WorkflowRun
+	endpoint := fmt.Sprintf("repos/%s/actions/runs?page=1&per_page=%d&created=%s", repo, 40, tStr)
 	output, err := c.apiCall(http.MethodGet, endpoint)
 	if err != nil {
 		return nil, err
@@ -47,7 +56,7 @@ func (c *CLIClient) ListWorkflowRuns(repo string, perPage int) ([]types.Workflow
 }
 
 // GetJobs fetches jobs for a workflow run
-func (c *CLIClient) GetJobs(repo string, runID int64) ([]types.Job, error) {
+func (c *ghClient) GetJobs(repo string, runID int64) ([]types.Job, error) {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/jobs", repo, runID)
 	output, err := c.apiCall(http.MethodGet, endpoint)
 	if err != nil {
@@ -63,7 +72,7 @@ func (c *CLIClient) GetJobs(repo string, runID int64) ([]types.Job, error) {
 }
 
 // GetJobLogs fetches logs for a specific job
-func (c *CLIClient) GetJobLogs(repo string, jobID int64) (string, error) {
+func (c *ghClient) GetJobLogs(repo string, jobID int64) (string, error) {
 	endpoint := fmt.Sprintf("repos/%s/actions/jobs/%d/logs", repo, jobID)
 	output, err := c.apiCall(http.MethodGet, endpoint)
 	if err != nil {
@@ -73,7 +82,7 @@ func (c *CLIClient) GetJobLogs(repo string, jobID int64) (string, error) {
 }
 
 // RerunWorkflow re-runs a workflow, optionally with debug logging enabled
-func (c *CLIClient) RerunWorkflow(repo string, runID int64, debug bool) error {
+func (c *ghClient) RerunWorkflow(repo string, runID int64, debug bool) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/rerun", repo, runID)
 	var extra []string
 	if debug {
@@ -84,14 +93,14 @@ func (c *CLIClient) RerunWorkflow(repo string, runID int64, debug bool) error {
 }
 
 // RerunFailedJobs re-runs only failed jobs in a workflow
-func (c *CLIClient) RerunFailedJobs(repo string, runID int64) error {
+func (c *ghClient) RerunFailedJobs(repo string, runID int64) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/rerun-failed-jobs", repo, runID)
 	_, err := c.apiCall(http.MethodPost, endpoint)
 	return err
 }
 
 // CancelWorkflow cancels a running workflow
-func (c *CLIClient) CancelWorkflow(repo string, runID int64) error {
+func (c *ghClient) CancelWorkflow(repo string, runID int64) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/cancel", repo, runID)
 	_, err := c.apiCall(http.MethodPost, endpoint)
 	return err
@@ -99,7 +108,7 @@ func (c *CLIClient) CancelWorkflow(repo string, runID int64) error {
 
 // DispatchWorkflow triggers a workflow_dispatch event on the given ref.
 // workflowFile is the filename, e.g. "ci.yaml".
-func (c *CLIClient) DispatchWorkflow(repo, workflowFile, ref string) error {
+func (c *ghClient) DispatchWorkflow(repo, workflowFile, ref string) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", repo, workflowFile)
 	_, err := c.apiCall(http.MethodPost, endpoint, "-f", "ref="+ref)
 	if err != nil {
@@ -117,7 +126,7 @@ func (c *CLIClient) DispatchWorkflow(repo, workflowFile, ref string) error {
 }
 
 // OpenInBrowser opens a URL in the default browser
-func (c *CLIClient) OpenInBrowser(url string) error {
+func (c *ghClient) OpenInBrowser(url string) error {
 	cmd := exec.Command("gh", "browse", "--url", url)
 	// Use open command on macOS, xdg-open on Linux
 	cmd = exec.Command("open", url)
@@ -125,7 +134,7 @@ func (c *CLIClient) OpenInBrowser(url string) error {
 }
 
 // apiCall makes an API call using the gh CLI
-func (c *CLIClient) apiCall(method, endpoint string, extraArgs ...string) ([]byte, error) {
+func (c *ghClient) apiCall(method, endpoint string, extraArgs ...string) ([]byte, error) {
 	args := append([]string{"api", "-X", method, endpoint}, extraArgs...)
 	cmd := exec.Command("gh", args...)
 	output, err := cmd.Output()

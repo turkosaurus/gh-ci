@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -29,6 +30,8 @@ const colSep = 2
 
 // Dashboard manages the main three-panel view (workflows, runs, detail).
 type Dashboard struct {
+	born time.Time
+
 	activePanel    int
 	workflowCursor int
 	cursor         int
@@ -60,6 +63,7 @@ type Dashboard struct {
 // NewDashboard creates a Dashboard with the given dependencies.
 func NewDashboard(cfg *config.Config, client gh.Client, s styles.Styles, k keys.KeyMap, defaultBranch, localBranch string) Dashboard {
 	return Dashboard{
+		born:           time.Now(),
 		config:         cfg,
 		client:         client,
 		styles:         s,
@@ -673,7 +677,7 @@ func (d Dashboard) renderList(width, height int, loading bool) string {
 	active := d.activePanel == panelRuns
 
 	if len(d.filteredRuns) == 0 {
-		if loading {
+		if loading && time.Since(d.born) > 1500*time.Millisecond {
 			return d.styles.Dimmed.Render("🔶 workflow runs loading")
 		}
 		return d.styles.Dimmed.Render("🟧 workflow runs empty")
