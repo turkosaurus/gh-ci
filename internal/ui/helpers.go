@@ -19,6 +19,8 @@ const (
 	logViewOverhead = 4   // number of rows consumed by header, spacing, and help bar in the log view.
 )
 
+var workflowDirGitHub = filepath.Join(".github", "workflows")
+
 // logContextLine is one display row in the context-window log view.
 type logContextLine struct {
 	lineNo  int // 1-based original line number; 0 = blank separator
@@ -88,34 +90,45 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 	return
 }
 
-// deriveLists collects unique workflow names (sorted, prefixed with workflowAll)
-// and unique branch names (sorted, no sentinel — all entries are real branches).
-// localDefs are merged in so workflows with no runs still appear.
+// deriveLists populates the workflow list, eliminating duplicates by name and file path.
+// Branch lists are also derived.
 func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]string, []string) {
+	filesAdded := make(map[string]bool)
 	workflowList := []string{workflowAll} // initiate list with "all" selector
 	// append all local names first
 	for _, def := range localDefs {
 		workflowList = append(workflowList, def.Name)
+		filesAdded[def.File] = true
 	}
 	var branchList []string
-	for _, wf := range runs {
-		if !slices.Contains(branchList, wf.HeadBranch) {
-			branchList = append(branchList, wf.HeadBranch)
+	for _, run := range runs {
+		// include all branches with any runs ever
+		if !slices.Contains(branchList, run.HeadBranch) {
+			branchList = append(branchList, run.HeadBranch)
 		}
-		if !slices.Contains(workflowList, wf.Name) {
-			// TODO: merge on name or file path
-			if !slices.Contains(workflowList, filepath.Base(wf.Path)) {
-				workflowList = append(workflowList, wf.Name)
+		// does not already exist by name
+		if !slices.Contains(workflowList, run.Name) {
+			// also check that the same file by another name doesn't exist in side map
+			_, ok := filesAdded[filepath.Base(run.Path)]
+			if ok {
+				continue
 			}
+			workflowList = append(workflowList, run.Name)
+			filesAdded[filepath.Base(run.Path)] = true
+			slog.Debug("added to list",
+				"run.Name", run.Name,
+				"run.Path", run.Path,
+			)
 		}
 	}
-	slog.Debug("derrived lists",
+	slog.Info("derived lists",
 		"workflowList", workflowList,
 		"branchList", branchList,
 	)
 	return workflowList, branchList
 }
 
+// gitRoot returns the absolute path of the git repository root, or "".
 func gitRoot() string {
 	out, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
 	if err != nil {
@@ -125,6 +138,7 @@ func gitRoot() string {
 	return strings.TrimSpace(string(out))
 }
 
+// gitBranch returns the current git branch name, or "".
 func gitBranch() string {
 	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
 	if err != nil {
@@ -134,10 +148,7 @@ func gitBranch() string {
 	return strings.TrimSpace(string(out))
 }
 
-var workflowDirGitHub = filepath.Join(".github", "workflows")
-
-// scanLocalWorkflows looks for workflow definition files
-// in .github/workflows/ and returns their names and filenames.
+// scanLocalWorkflows looks for {*.yaml,*.yml} in workflowDirGithub
 func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 	var defs []types.WorkflowDef
 	for _, pattern := range []string{"*.yaml", "*.yml"} {

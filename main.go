@@ -30,7 +30,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, err := newFileLogger()
+	logger, err := newFileLogger("text")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: cannot initialize logger: %v\n", err)
 		os.Exit(1)
