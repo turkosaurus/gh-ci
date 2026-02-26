@@ -516,10 +516,21 @@ func (d Dashboard) View(width, height int, message string, loading bool) string 
 		bodyH = 5
 	}
 
-	const workflowW = 22
-	const maxDetailW = 40
+	workflowW := 22
+	maxDetailW := 40
 	detailW := min(maxDetailW, w*30/100)
 	runsW := w - workflowW - detailW - 2 // 2 separators
+
+	// Shrink panels proportionally if terminal is too narrow
+	if runsW < 20 {
+		// Reduce detail first, then workflow panel
+		detailW = max(8, w*20/100)
+		workflowW = max(12, w*25/100)
+		runsW = w - workflowW - detailW - 2
+		if runsW < 1 {
+			runsW = 1
+		}
+	}
 
 	sep := lipgloss.NewStyle().
 		Foreground(styles.ColorSubtle).
@@ -683,24 +694,60 @@ func (d Dashboard) renderList(width, height int, loading bool) string {
 		return d.styles.Dimmed.Render("🟧 workflow runs empty")
 	}
 
-	const colOk, colNum, colDur, colFile, colDispatched = 2, 6, 7, 14, 16
-	colWorkflow := width - colOk - colNum - colDur - colFile - colDispatched - 5*colSep
+	const colOk, colNum, colDur = 2, 6, 7
+	colFile, colDispatched := 14, 16
+
+	// Number of separators depends on visible columns (always 3 for ok/num/dur/workflow, +1 each for file/dispatched)
+	numSeps := 3
+	usedFixed := colOk + colNum + colDur
+	if colDispatched > 0 {
+		usedFixed += colDispatched
+		numSeps++
+	}
+	if colFile > 0 {
+		usedFixed += colFile
+		numSeps++
+	}
+	colWorkflow := width - usedFixed - numSeps*colSep
+
+	// Collapse FILE column first if too narrow
 	if colWorkflow < 10 {
-		colWorkflow = 10
+		colFile = 0
+		numSeps = 3
+		usedFixed = colOk + colNum + colDur + colDispatched
+		numSeps++
+		colWorkflow = width - usedFixed - numSeps*colSep
+	}
+	// Collapse DISPATCHED column if still too narrow
+	if colWorkflow < 10 {
+		colDispatched = 0
+		numSeps = 3
+		usedFixed = colOk + colNum + colDur
+		colWorkflow = width - usedFixed - numSeps*colSep
+	}
+	if colWorkflow < 4 {
+		colWorkflow = 4
 	}
 
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorGray)
 	if active {
 		headerStyle = headerStyle.Foreground(styles.ColorPurple)
 	}
-	header := fmt.Sprintf("%-*s  %-*s  %-*s  %*s  %-*s  %-*s",
-		colDispatched, "DISPATCHED (UTC)",
-		colFile, "FILE",
-		colWorkflow, "NAME",
-		colNum, "RUN",
-		colDur, "TIME",
-		colOk, "OK",
+
+	var headerParts []string
+	if colDispatched > 0 {
+		headerParts = append(headerParts, fmt.Sprintf("%-*s", colDispatched, "DISPATCHED (UTC)"))
+	}
+	if colFile > 0 {
+		headerParts = append(headerParts, fmt.Sprintf("%-*s", colFile, "FILE"))
+	}
+	headerParts = append(headerParts,
+		fmt.Sprintf("%-*s", colWorkflow, "NAME"),
+		fmt.Sprintf("%*s", colNum, "RUN"),
+		fmt.Sprintf("%-*s", colDur, "TIME"),
+		fmt.Sprintf("%-*s", colOk, "OK"),
 	)
+	header := strings.Join(headerParts, "  ")
 	rows := []string{headerStyle.Render(header)}
 
 	listH := height - 2
@@ -727,24 +774,62 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 	icon := styles.StatusIcon(run.Status, run.Conclusion)
 	iconS := fmt.Sprintf("%-*s", colOk, icon)
 	wfS := fmt.Sprintf("%-*s", colWorkflow, gh.TruncateString(run.Name, colWorkflow))
-	fileS := fmt.Sprintf("%-*s", colFile, gh.TruncateString(d.workflowFiles[run.Name], colFile))
 	numS := fmt.Sprintf("%*s", colNum, fmt.Sprintf("#%d", run.RunNumber))
 	durS := fmt.Sprintf("%-*s", colDur, gh.FormatDuration(int64(run.Duration().Seconds())))
-	dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format(timestampFormat))
+
+	// Build column list based on which columns are visible
+	type col struct {
+		plain  string
+		styled func(lipgloss.Style) string // for selected+active row
+		dim    bool                         // use dimmed style in normal mode
+	}
+	var cols []col
+
+	if colDispatched > 0 {
+		dispS := fmt.Sprintf("%-*s", colDispatched, run.CreatedAt.Format(timestampFormat))
+		cols = append(cols, col{plain: dispS, styled: func(bg lipgloss.Style) string {
+			return d.styles.Dimmed.Background(bg.GetBackground()).Render(dispS)
+		}, dim: true})
+	}
+	if colFile > 0 {
+		fileS := fmt.Sprintf("%-*s", colFile, gh.TruncateString(d.workflowFiles[run.Name], colFile))
+		cols = append(cols, col{plain: fileS, styled: func(bg lipgloss.Style) string {
+			return d.styles.Dimmed.Background(bg.GetBackground()).Render(fileS)
+		}, dim: true})
+	}
+	cols = append(cols,
+		col{plain: wfS, styled: func(bg lipgloss.Style) string {
+			return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(bg.GetBackground()).Render(wfS)
+		}},
+		col{plain: numS, styled: func(bg lipgloss.Style) string {
+			return lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(bg.GetBackground()).Render(numS)
+		}},
+		col{plain: durS, styled: func(bg lipgloss.Style) string {
+			return d.styles.Duration.Background(bg.GetBackground()).Render(durS)
+		}},
+		col{plain: iconS, styled: func(bg lipgloss.Style) string {
+			return d.styles.StatusStyle(run.Status, run.Conclusion).Background(bg.GetBackground()).Render(iconS)
+		}},
+	)
 
 	if selected && active {
-		// Per-element styles with shared background so status/duration colors are preserved.
 		bg := lipgloss.NewStyle().Background(styles.ColorBgLight)
 		sep := bg.Render("  ")
-		disp := d.styles.Dimmed.Background(styles.ColorBgLight).Render(dispS)
-		wf := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(wfS)
-		file := d.styles.Dimmed.Background(styles.ColorBgLight).Render(fileS)
-		num := lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(styles.ColorBgLight).Render(numS)
-		dur := d.styles.Duration.Background(styles.ColorBgLight).Render(durS)
-		st := d.styles.StatusStyle(run.Status, run.Conclusion).Background(styles.ColorBgLight).Render(iconS)
-		row := disp + sep + file + sep + wf + sep + num + sep + dur + sep + st
-		// pad remaining width with background so the bar extends to the edge
-		used := colDispatched + colWorkflow + colFile + colNum + colDur + colOk + 5*colSep
+		var parts []string
+		for _, c := range cols {
+			parts = append(parts, c.styled(bg))
+		}
+		row := strings.Join(parts, sep)
+		// pad remaining width with background
+		used := colWorkflow + colNum + colDur + colOk
+		numSeps := len(cols) - 1
+		if colDispatched > 0 {
+			used += colDispatched
+		}
+		if colFile > 0 {
+			used += colFile
+		}
+		used += numSeps * colSep
 		if pad := width - used; pad > 0 {
 			row += bg.Render(strings.Repeat(" ", pad))
 		}
@@ -752,16 +837,28 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 	}
 
 	if selected {
-		plainRow := dispS + "  " + fileS + "  " + wfS + "  " + numS + "  " + durS + "  " + iconS
+		var parts []string
+		for _, c := range cols {
+			parts = append(parts, c.plain)
+		}
+		plainRow := strings.Join(parts, "  ")
 		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(plainRow)
 	}
 
 	// normal: per-element styles
-	st := d.styles.StatusStyle(run.Status, run.Conclusion).Render(iconS)
-	file := d.styles.Dimmed.Render(fileS)
-	dur := d.styles.Duration.Render(durS)
-	disp := d.styles.Dimmed.Render(dispS)
-	return disp + "  " + file + "  " + wfS + "  " + numS + "  " + dur + "  " + st
+	var parts []string
+	for _, c := range cols {
+		if c.dim {
+			parts = append(parts, d.styles.Dimmed.Render(c.plain))
+		} else if c.plain == iconS {
+			parts = append(parts, d.styles.StatusStyle(run.Status, run.Conclusion).Render(c.plain))
+		} else if c.plain == durS {
+			parts = append(parts, d.styles.Duration.Render(c.plain))
+		} else {
+			parts = append(parts, c.plain)
+		}
+	}
+	return strings.Join(parts, "  ")
 }
 
 func (d Dashboard) renderDetail(width int) string {

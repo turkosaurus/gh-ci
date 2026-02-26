@@ -66,6 +66,9 @@ func (lv LogViewer) Update(msg tea.KeyMsg, height int) (LogViewer, tea.Cmd) {
 		displayLen = len(strings.Split(lv.logs, "\n"))
 	}
 	visibleLines := height - logViewOverhead
+	if visibleLines < 1 {
+		visibleLines = 1
+	}
 
 	switch {
 	case key.Matches(msg, lv.keys.Quit):
@@ -166,6 +169,9 @@ func (lv LogViewer) View(width, height int) string {
 	}
 
 	visibleLines := h - logViewOverhead
+	if visibleLines < 1 {
+		visibleLines = 1
+	}
 	maxLineW := w - 8
 	if maxLineW < 40 {
 		maxLineW = 40

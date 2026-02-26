@@ -188,7 +188,16 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, tea.Batch(cmds...)
 }
 
+const (
+	minWidth  = 60
+	minHeight = 14
+)
+
 func (a App) View() string {
+	if a.width > 0 && a.height > 0 && (a.width < minWidth || a.height < minHeight) {
+		msg := fmt.Sprintf("terminal too small (%dx%d, need %dx%d)", a.width, a.height, minWidth, minHeight)
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, msg)
+	}
 	if a.screen == screenLogs {
 		return a.logViewer.View(a.width, a.height)
 	}
