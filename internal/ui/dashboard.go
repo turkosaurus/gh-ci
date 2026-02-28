@@ -478,7 +478,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 						repo = d.config.Repos[0]
 					} else {
 						d.PendingMessage = "cannot dispatch: no runs for this workflow on this branch"
-						return d, clearMsg()
+						return d, clearMsg(time.Duration(d.config.MsgTimeout) * time.Second)
 					}
 					d.dispatchDialog.Open(repo, file, d.selectedBranch())
 				}
@@ -781,7 +781,7 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 	type col struct {
 		plain  string
 		styled func(lipgloss.Style) string // for selected+active row
-		dim    bool                         // use dimmed style in normal mode
+		dim    bool                        // use dimmed style in normal mode
 	}
 	var cols []col
 

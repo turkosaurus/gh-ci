@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
@@ -54,7 +55,7 @@ func NewApp(cfg *config.Config) App {
 	s := styles.DefaultStyles()
 	k := keys.DefaultKeyMap()
 	client := gh.NewClient()
-	defaultBranch := cfg.DefaultPrimaryBranch
+	defaultBranch := cfg.PrimaryBranch
 	localBranch := gitBranch()
 	return App{
 		config:        cfg,
@@ -164,7 +165,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(), loadRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), loadRuns(a.client, a.config.Repos))
 
 	case dispatchResultMsg:
 		if msg.err != nil {
@@ -172,7 +173,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(), loadRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), loadRuns(a.client, a.config.Repos))
 
 	case tickMsg:
 		a.runs.SetFetching()

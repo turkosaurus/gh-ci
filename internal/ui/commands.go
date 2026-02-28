@@ -116,8 +116,8 @@ func tick(interval int) tea.Cmd {
 	})
 }
 
-func clearMsg() tea.Cmd {
-	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+func clearMsg(timeout time.Duration) tea.Cmd {
+	return tea.Tick(timeout, func(t time.Time) tea.Msg {
 		return clearMsgMsg{}
 	})
 }
