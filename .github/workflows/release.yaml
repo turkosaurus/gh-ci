@@ -24,7 +24,7 @@ jobs:
     needs: release-create
     uses: ./.github/workflows/test.yaml
     with:
-      integration: true
+      test: true
 
   build-upload:
     needs: release-create

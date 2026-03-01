@@ -7,14 +7,14 @@ on:
       test:
         description: "integration"
         required: false
-        default: 'false'
+        default: false
         type: boolean
   workflow_call:
     inputs:
       test:
         description: "integration"
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
