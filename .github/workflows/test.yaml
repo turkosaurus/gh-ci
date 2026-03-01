@@ -8,12 +8,14 @@ on:
         description: "integration"
         required: false
         default: 'false'
+        boolean: true
   workflow_call:
     inputs:
       test:
         description: "integration"
         required: false
         default: 'false'
+        boolean: true
 
 jobs:
   test:
