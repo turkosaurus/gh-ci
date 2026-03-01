@@ -56,9 +56,9 @@ func TestSplitRepo(t *testing.T) {
 		{"org/my-repo", "org", "my-repo"},
 	}
 	for _, tt := range tests {
-		owner, name := SplitRepo(tt.repo)
+		owner, name := RepoParts(tt.repo)
 		if owner != tt.wantOwner || name != tt.wantName {
-			t.Errorf("SplitRepo(%q) = (%q, %q), want (%q, %q)",
+			t.Errorf("RepoParts(%q) = (%q, %q), want (%q, %q)",
 				tt.repo, owner, name, tt.wantOwner, tt.wantName)
 		}
 	}

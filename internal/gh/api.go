@@ -3,6 +3,7 @@ package gh
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os/exec"
 	"strings"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
+
+var ghApiMaxRetry int = 3
 
 // RunState is a read-only view of the runs cache that the client can
 // inspect before deciding how to fetch (e.g. skip if data is fresh).
@@ -20,7 +23,7 @@ type RunState interface {
 
 // Client is the interface for GitHub API operations.
 type Client interface {
-	ListWorkflowRuns(repo string, pageMax int) ([]types.WorkflowRun, error)
+	ListWorkflowRuns(repo string, since time.Time) ([]types.WorkflowRun, error)
 	GetJobs(repo string, runID int64) ([]types.Job, error)
 	GetJobLogs(repo string, jobID int64) (string, error)
 	RerunWorkflow(repo string, runID int64, debug bool) error
@@ -42,34 +45,56 @@ func NewClient(state RunState) Client {
 	return &ghClient{state: state}
 }
 
-// ListWorkflowRuns fetches workflow runs for a repository
-// TODO: this branch is current, not selected
-func (c *ghClient) ListWorkflowRuns(repo string, pageMax int) ([]types.WorkflowRun, error) {
-	// YYYY-MM-DD
+// ListWorkflowRuns fetches workflow runs for a repository.
+// On initial fetch, fetches only the first page for speed.
+// On subsequent fetches, uses --paginate to get all pages.
+func (c *ghClient) ListWorkflowRuns(repo string, since time.Time) ([]types.WorkflowRun, error) {
 	fmtString := "2006-01-02"
-	t := time.Now().Add(-2 * 7 * 24 * time.Hour).Format(fmtString)
+	t := time.Now().Add(-52 * 7 * 24 * time.Hour).Format(fmtString)
 	tStr := fmt.Sprintf(">%s", t)
 
-	// TODO: paginate
-	// var allRuns []types.WorkflowRun
-	endpoint := fmt.Sprintf("repos/%s/actions/runs?page=1&per_page=%d&created=%s", repo, 40, tStr)
-	output, err := c.apiCall(http.MethodGet, endpoint)
+	var allRuns []types.WorkflowRun
+
+	// Just get the first page on initial run for speed
+	if !c.state.HasData() {
+		endpoint := fmt.Sprintf("repos/%s/actions/runs?page=1&per_page=40&created=%s", repo, tStr)
+		output, err := c.ghApiCall(http.MethodGet, endpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		var response types.WorkflowRunsResponse
+		if err := json.Unmarshal(output, &response); err != nil {
+			return nil, fmt.Errorf("failed to parse workflow runs response: %w", err)
+		}
+		allRuns = append(allRuns, response.WorkflowRuns...)
+		slog.Debug("fetch latest runs",
+			"repo", repo,
+			"count", len(response.WorkflowRuns),
+		)
+		return allRuns, nil
+	}
+
+	// On subsequent fetches, paginate through all results
+	endpoint := fmt.Sprintf("repos/%s/actions/runs?per_page=40&created=%s", repo, tStr)
+	output, err := c.ghApiPaginated(http.MethodGet, endpoint)
 	if err != nil {
 		return nil, err
 	}
 
 	var response types.WorkflowRunsResponse
 	if err := json.Unmarshal(output, &response); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
+		return nil, fmt.Errorf("failed to parse paginated workflow runs: %w", err)
 	}
-
-	return response.WorkflowRuns, nil
+	allRuns = append(allRuns, response.WorkflowRuns...)
+	slog.Debug("fetch all runs", "repo", repo, "count", len(allRuns))
+	return allRuns, nil
 }
 
 // GetJobs fetches jobs for a workflow run
 func (c *ghClient) GetJobs(repo string, runID int64) ([]types.Job, error) {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/jobs", repo, runID)
-	output, err := c.apiCall(http.MethodGet, endpoint)
+	output, err := c.ghApiCall(http.MethodGet, endpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +110,7 @@ func (c *ghClient) GetJobs(repo string, runID int64) ([]types.Job, error) {
 // GetJobLogs fetches logs for a specific job
 func (c *ghClient) GetJobLogs(repo string, jobID int64) (string, error) {
 	endpoint := fmt.Sprintf("repos/%s/actions/jobs/%d/logs", repo, jobID)
-	output, err := c.apiCall(http.MethodGet, endpoint)
+	output, err := c.ghApiCall(http.MethodGet, endpoint)
 	if err != nil {
 		return "", err
 	}
@@ -99,21 +124,21 @@ func (c *ghClient) RerunWorkflow(repo string, runID int64, debug bool) error {
 	if debug {
 		extra = []string{"-F", "enable_debug_logging=true"}
 	}
-	_, err := c.apiCall(http.MethodPost, endpoint, extra...)
+	_, err := c.ghApiCall(http.MethodPost, endpoint, extra...)
 	return err
 }
 
 // RerunFailedJobs re-runs only failed jobs in a workflow
 func (c *ghClient) RerunFailedJobs(repo string, runID int64) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/rerun-failed-jobs", repo, runID)
-	_, err := c.apiCall(http.MethodPost, endpoint)
+	_, err := c.ghApiCall(http.MethodPost, endpoint)
 	return err
 }
 
 // CancelWorkflow cancels a running workflow
 func (c *ghClient) CancelWorkflow(repo string, runID int64) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/runs/%d/cancel", repo, runID)
-	_, err := c.apiCall(http.MethodPost, endpoint)
+	_, err := c.ghApiCall(http.MethodPost, endpoint)
 	return err
 }
 
@@ -121,7 +146,7 @@ func (c *ghClient) CancelWorkflow(repo string, runID int64) error {
 // workflowFile is the filename, e.g. "ci.yaml".
 func (c *ghClient) DispatchWorkflow(repo, workflowFile, ref string) error {
 	endpoint := fmt.Sprintf("repos/%s/actions/workflows/%s/dispatches", repo, workflowFile)
-	_, err := c.apiCall(http.MethodPost, endpoint, "-f", "ref="+ref)
+	_, err := c.ghApiCall(http.MethodPost, endpoint, "-f", "ref="+ref)
 	if err != nil {
 		msg := err.Error()
 		lower := strings.ToLower(msg)
@@ -144,22 +169,84 @@ func (c *ghClient) OpenInBrowser(url string) error {
 	return cmd.Start()
 }
 
-// apiCall makes an API call using the gh CLI
-func (c *ghClient) apiCall(method, endpoint string, extraArgs ...string) ([]byte, error) {
+// ghApiCall makes an API call using the gh CLI
+func (c *ghClient) ghApiCall(method, endpoint string, extraArgs ...string) ([]byte, error) {
 	args := append([]string{"api", "-X", method, endpoint}, extraArgs...)
 	cmd := exec.Command("gh", args...)
-	output, err := cmd.Output()
-	if err != nil {
+	var err error
+	var output []byte
+	for i := range ghApiMaxRetry {
+		output, err = cmd.Output()
+		if err == nil {
+			// slog.Debug("api called",
+			// 	"method", method,
+			// 	"endpoint", endpoint,
+			// 	"extraArgs", extraArgs,
+			// )
+			return output, nil
+		}
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("gh api error: %s", string(exitErr.Stderr))
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "rate limit") || strings.Contains(stderr, "abuse detection") {
+				waitTime := time.Duration((i+1)*2) * time.Second
+				slog.Warn("rate limited",
+					"method", method,
+					"endpoint", endpoint,
+					"extraArgs", extraArgs,
+					"error", err,
+					"attempt_current", i+1,
+					"attempt_max", ghApiMaxRetry,
+				)
+				time.Sleep(waitTime)
+				continue
+			}
+			return nil, fmt.Errorf("gh api error: %s", stderr)
 		}
 		return nil, fmt.Errorf("failed to execute gh: %w", err)
 	}
-	return output, nil
+	return nil, fmt.Errorf("gh api error after %d retries: %w", ghApiMaxRetry, err)
 }
 
-// ParseRepoFromRun extracts the repo identifier from a workflow run
-func ParseRepoFromRun(run types.WorkflowRun) string {
+// ghApiPaginated makes an API call with --paginate to fetch all pages.
+// The gh CLI handles pagination automatically and returns concatenated results.
+func (c *ghClient) ghApiPaginated(method, endpoint string, extraArgs ...string) ([]byte, error) {
+	args := append([]string{"api", "--paginate", "-X", method, endpoint}, extraArgs...)
+	cmd := exec.Command("gh", args...)
+	var err error
+	var output []byte
+	for i := range ghApiMaxRetry {
+		output, err = cmd.Output()
+		if err == nil {
+			slog.Debug("paginated api call",
+				"method", method,
+				"endpoint", endpoint,
+				"extraArgs", extraArgs,
+			)
+			return output, nil
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "rate limit") || strings.Contains(stderr, "abuse detection") {
+				waitTime := time.Duration((i+1)*2) * time.Second
+				slog.Warn("rate limited on paginated call",
+					"method", method,
+					"endpoint", endpoint,
+					"error", err,
+					"attempt_current", i+1,
+					"attempt_max", ghApiMaxRetry,
+				)
+				time.Sleep(waitTime)
+				continue
+			}
+			return nil, fmt.Errorf("gh api error: %s", stderr)
+		}
+		return nil, fmt.Errorf("failed to execute gh: %w", err)
+	}
+	return nil, fmt.Errorf("gh api error after %d retries: %w", ghApiMaxRetry, err)
+}
+
+// RepoName extracts the repo identifier from a workflow run
+func RepoName(run types.WorkflowRun) string {
 	return run.Repository.FullName
 }
 
@@ -190,8 +277,8 @@ func TruncateString(s string, maxLen int) string {
 	return s[:maxLen-3] + "..."
 }
 
-// SplitRepo splits a repo string into owner and name
-func SplitRepo(repo string) (owner, name string) {
+// RepoParts splits a repo string into owner and name
+func RepoParts(repo string) (owner, name string) {
 	parts := strings.SplitN(repo, "/", 2)
 	if len(parts) != 2 {
 		return "", repo

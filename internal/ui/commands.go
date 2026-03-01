@@ -39,7 +39,7 @@ func refreshRuns(client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
 		runMap := make(types.RunMap)
 		for _, repo := range repos {
-			repoRuns, err := client.ListWorkflowRuns(repo, 10)
+			repoRuns, err := client.ListWorkflowRuns(repo, time.Time{})
 			if err != nil {
 				return runsUpdatedMsg{err: err}
 			}
