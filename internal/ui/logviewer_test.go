@@ -18,7 +18,7 @@ func TestLogViewerSearch(t *testing.T) {
 	k := keys.DefaultKeyMap()
 
 	t.Run("enter search mode and submit query", func(t *testing.T) {
-		lv := NewLogViewer(s, k, config.DefaultLogContext)
+		lv := NewLogViewer(s, k, config.DefaultLogContext, false)
 		lv.SetLogs("line one\nline two error\nline three\nline four error\nline five", "test-job")
 
 		// press / to enter search
@@ -38,7 +38,7 @@ func TestLogViewerSearch(t *testing.T) {
 	})
 
 	t.Run("search next and prev", func(t *testing.T) {
-		lv := NewLogViewer(s, k, config.DefaultLogContext)
+		lv := NewLogViewer(s, k, config.DefaultLogContext, false)
 		lv.SetLogs(strings.Repeat("filler\n", 20)+"ERROR here\n"+strings.Repeat("filler\n", 20)+"ERROR again\n", "test-job")
 
 		// manually set up search state
@@ -63,7 +63,7 @@ func TestLogViewerSearch(t *testing.T) {
 	})
 
 	t.Run("escape cancels search mode", func(t *testing.T) {
-		lv := NewLogViewer(s, k, config.DefaultLogContext)
+		lv := NewLogViewer(s, k, config.DefaultLogContext, false)
 		lv.SetLogs("test", "job")
 
 		// enter search mode
@@ -76,7 +76,7 @@ func TestLogViewerSearch(t *testing.T) {
 	})
 
 	t.Run("back returns to main", func(t *testing.T) {
-		lv := NewLogViewer(s, k, config.DefaultLogContext)
+		lv := NewLogViewer(s, k, config.DefaultLogContext, false)
 		lv.SetLogs("test", "job")
 
 		lv, cmd := lv.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}}, 40)
@@ -96,7 +96,7 @@ func TestLogViewerScrolling(t *testing.T) {
 	for i := range lines {
 		lines[i] = "line"
 	}
-	lv := NewLogViewer(s, k, config.DefaultLogContext)
+	lv := NewLogViewer(s, k, config.DefaultLogContext, false)
 	lv.SetLogs(strings.Join(lines, "\n"), "job")
 
 	// height 30 with logViewOverhead gives visible area

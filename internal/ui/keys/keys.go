@@ -27,6 +27,7 @@ type KeyMap struct {
 	Top          key.Binding
 	Bottom       key.Binding
 	Help         key.Binding
+	Wrap         key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -123,6 +124,10 @@ func DefaultKeyMap() KeyMap {
 		Help: key.NewBinding(
 			key.WithKeys("?"),
 			key.WithHelp("?", "help"),
+		),
+		Wrap: key.NewBinding(
+			key.WithKeys("w"),
+			key.WithHelp("w", "wrap"),
 		),
 	}
 }

@@ -27,12 +27,13 @@ type LogViewer struct {
 	matchIdx     int
 	helpModal    HelpModal
 	logContext   int
+	logWrap      bool
 
 	styles styles.Styles
 	keys   keys.KeyMap
 }
 
-func NewLogViewer(s styles.Styles, k keys.KeyMap, logContext int) LogViewer {
+func NewLogViewer(s styles.Styles, k keys.KeyMap, logContext int, logWrap bool) LogViewer {
 	ti := textinput.New()
 	ti.Placeholder = "search logs..."
 	ti.CharLimit = 100
@@ -41,6 +42,7 @@ func NewLogViewer(s styles.Styles, k keys.KeyMap, logContext int) LogViewer {
 		keys:       k,
 		textInput:  ti,
 		logContext: logContext,
+		logWrap:    logWrap,
 	}
 }
 
@@ -138,6 +140,10 @@ func (lv LogViewer) Update(msg tea.KeyMsg, height int) (LogViewer, tea.Cmd) {
 	case key.Matches(msg, lv.keys.Help):
 		lv.helpModal.Open()
 		return lv, nil
+
+	case key.Matches(msg, lv.keys.Wrap):
+		lv.logWrap = !lv.logWrap
+		lv.logOffset = 0
 	}
 
 	return lv, nil
@@ -233,8 +239,41 @@ func (lv LogViewer) View(width, height int) string {
 	} else {
 		// normal (no filter) mode
 		logLines := strings.Split(lv.logs, "\n")
-		end := min(lv.logOffset+visibleLines, len(logLines))
-		scrollInfo := fmt.Sprintf("%d-%d / %d", lv.logOffset+1, end, len(logLines))
+
+		// If wrapping, expand lines to include wrapped segments
+		var displayLines []struct {
+			lineNo int
+			text   string
+		}
+		for i, line := range logLines {
+			if lv.logWrap && len(line) > maxLineW {
+				// Wrap long lines
+				wrapped := wrapText(line, maxLineW)
+				for j, segment := range wrapped {
+					if j == 0 {
+						displayLines = append(displayLines, struct {
+							lineNo int
+							text   string
+						}{i + 1, segment})
+					} else {
+						displayLines = append(displayLines, struct {
+							lineNo int
+							text   string
+						}{-1, segment}) // -1 indicates continuation
+					}
+				}
+			} else {
+				// Truncate or display as-is
+				text := gh.TruncateString(line, maxLineW)
+				displayLines = append(displayLines, struct {
+					lineNo int
+					text   string
+				}{i + 1, text})
+			}
+		}
+
+		end := min(lv.logOffset+visibleLines, len(displayLines))
+		scrollInfo := fmt.Sprintf("%d-%d / %d", lv.logOffset+1, end, len(displayLines))
 		header := fmt.Sprintf("Logs: %s", lv.jobName)
 		hGap := w - len(header) - len(scrollInfo) - 2
 		if hGap < 1 {
@@ -245,9 +284,14 @@ func (lv LogViewer) View(width, height int) string {
 		sb.WriteString("\n\n")
 
 		for i := lv.logOffset; i < end; i++ {
-			line := gh.TruncateString(logLines[i], maxLineW)
-			sb.WriteString(lv.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", i+1)))
-			sb.WriteString(lv.styles.LogLine.Render(line))
+			dl := displayLines[i]
+			if dl.lineNo == -1 {
+				// Continuation line (no line number)
+				sb.WriteString(lv.styles.LogLineNumber.Render(fmt.Sprintf("%5s ", "")))
+			} else {
+				sb.WriteString(lv.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", dl.lineNo)))
+			}
+			sb.WriteString(lv.styles.LogLine.Render(dl.text))
 			sb.WriteString("\n")
 		}
 	}
@@ -265,21 +309,19 @@ func (lv LogViewer) View(width, height int) string {
 		helpItems := []string{
 			bindingHelp(lv.styles, lv.keys.SearchNext),
 			bindingHelp(lv.styles, lv.keys.SearchPrev),
-			lv.styles.HelpKey.Render("↑/↓") + " " + lv.styles.HelpDesc.Render("scroll"),
 			lv.styles.HelpKey.Render(lv.keys.Search.Help().Key) + " " + lv.styles.HelpDesc.Render("new search"),
-			lv.styles.HelpKey.Render("h/esc") + " " + lv.styles.HelpDesc.Render("back"),
+			lv.styles.HelpKey.Render("h/q/esc") + " " + lv.styles.HelpDesc.Render("back"),
 			bindingHelp(lv.styles, lv.keys.Help),
 			bindingHelp(lv.styles, lv.keys.Quit),
 		}
 		sb.WriteString(lv.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 	} else {
 		helpItems := []string{
-			bindingHelp(lv.styles, lv.keys.Up),
-			bindingHelp(lv.styles, lv.keys.Down),
 			lv.styles.HelpKey.Render("g/G") + " " + lv.styles.HelpDesc.Render("top/bottom"),
 			lv.styles.HelpKey.Render("ctrl+u/d") + " " + lv.styles.HelpDesc.Render("½ page"),
 			bindingHelp(lv.styles, lv.keys.Search),
-			lv.styles.HelpKey.Render("h/esc/⌫") + " " + lv.styles.HelpDesc.Render("back"),
+			bindingHelp(lv.styles, lv.keys.Wrap),
+			lv.styles.HelpKey.Render("h/q/esc/⌫") + " " + lv.styles.HelpDesc.Render("back"),
 			bindingHelp(lv.styles, lv.keys.Help),
 			bindingHelp(lv.styles, lv.keys.Quit),
 		}
@@ -289,6 +331,26 @@ func (lv LogViewer) View(width, height int) string {
 	result := sb.String()
 	if lv.helpModal.Active() {
 		return lv.helpModal.View(lv.keys, lv.styles, w, h, false)
+	}
+	return result
+}
+
+// wrapText splits a long line into segments that fit within width characters
+func wrapText(text string, width int) []string {
+	if width < 1 {
+		width = 1
+	}
+	if len(text) <= width {
+		return []string{text}
+	}
+
+	var result []string
+	for len(text) > width {
+		result = append(result, text[:width])
+		text = text[width:]
+	}
+	if len(text) > 0 {
+		result = append(result, text)
 	}
 	return result
 }

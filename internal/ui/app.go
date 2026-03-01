@@ -95,7 +95,7 @@ func NewApp(cfg *config.Config) App {
 		defaultBranch: defaultBranch,
 		localBranch:   localBranch,
 		dashboard:     NewDashboard(cfg, client, runs, s, k, defaultBranch, localBranch),
-		logViewer:     NewLogViewer(s, k, cfg.LogContext),
+		logViewer:     NewLogViewer(s, k, cfg.LogContext, cfg.LogWrap),
 	}
 }
 

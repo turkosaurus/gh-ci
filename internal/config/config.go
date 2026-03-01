@@ -21,6 +21,7 @@ type Config struct {
 	LogPath         string   `yaml:"log_path"`            // optional log file path
 	LogRotateAge    int      `yaml:"log_rotate_age"`      // truncate log flie if not modified (seconds)
 	LogContext      int      `yaml:"log_context"`         // lines of context around each log search match
+	LogWrap         bool     `yaml:"log_wrap"`            // wrap long lines in log viewer
 }
 
 // DefaultConfig returns the default configuration
@@ -33,6 +34,7 @@ func DefaultConfig() *Config {
 		LogPath:         logPath(),
 		LogRotateAge:    10, // TODO: change to hours so as to be session useful
 		LogContext:      DefaultLogContext,
+		LogWrap:         false,
 	}
 }
 
