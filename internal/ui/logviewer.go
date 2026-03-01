@@ -80,6 +80,15 @@ func (lv LogViewer) Update(msg tea.KeyMsg, height int) (LogViewer, tea.Cmd) {
 	}
 
 	switch {
+	case msg.String() == "q":
+		// 'q' goes back to main, not quit (ctrl+c still quits)
+		lv.logQuery = ""
+		lv.searching = false
+		lv.contextLines = nil
+		lv.matchGroups = nil
+		lv.matchIdx = 0
+		return lv, func() tea.Msg { return backToMainMsg{} }
+
 	case key.Matches(msg, lv.keys.Quit):
 		return lv, tea.Quit
 
@@ -306,26 +315,40 @@ func (lv LogViewer) View(width, height int) string {
 		}
 		sb.WriteString(prompt + strings.Repeat(" ", gap) + esc)
 	} else if lv.logQuery != "" {
-		helpItems := []string{
+		leftItems := []string{
 			bindingHelp(lv.styles, lv.keys.SearchNext),
 			bindingHelp(lv.styles, lv.keys.SearchPrev),
 			lv.styles.HelpKey.Render(lv.keys.Search.Help().Key) + " " + lv.styles.HelpDesc.Render("new search"),
+		}
+		rightItems := []string{
 			lv.styles.HelpKey.Render("h/q/esc") + " " + lv.styles.HelpDesc.Render("back"),
 			bindingHelp(lv.styles, lv.keys.Help),
-			bindingHelp(lv.styles, lv.keys.Quit),
 		}
-		sb.WriteString(lv.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
+		left := strings.Join(leftItems, "  ")
+		right := strings.Join(rightItems, "  ")
+		gap := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+		if gap < 1 {
+			gap = 1
+		}
+		sb.WriteString(lv.styles.Dimmed.Render(left + strings.Repeat(" ", gap) + right))
 	} else {
-		helpItems := []string{
+		leftItems := []string{
 			lv.styles.HelpKey.Render("g/G") + " " + lv.styles.HelpDesc.Render("top/bottom"),
 			lv.styles.HelpKey.Render("ctrl+u/d") + " " + lv.styles.HelpDesc.Render("½ page"),
 			bindingHelp(lv.styles, lv.keys.Search),
 			bindingHelp(lv.styles, lv.keys.Wrap),
+		}
+		rightItems := []string{
 			lv.styles.HelpKey.Render("h/q/esc/⌫") + " " + lv.styles.HelpDesc.Render("back"),
 			bindingHelp(lv.styles, lv.keys.Help),
-			bindingHelp(lv.styles, lv.keys.Quit),
 		}
-		sb.WriteString(lv.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
+		left := strings.Join(leftItems, "  ")
+		right := strings.Join(rightItems, "  ")
+		gap := w - lipgloss.Width(left) - lipgloss.Width(right) - 2
+		if gap < 1 {
+			gap = 1
+		}
+		sb.WriteString(lv.styles.Dimmed.Render(left + strings.Repeat(" ", gap) + right))
 	}
 
 	result := sb.String()
