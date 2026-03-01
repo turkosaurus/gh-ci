@@ -40,14 +40,14 @@ build_target() {
 
 # Build all the platforms, because a TUI client
 # could be running on anything.
+# windows amd64 '.exe' \
+# windows 386 '.exe' \
 targets() {
     set -- \
         linux amd64 '' \
         linux 386 '' \
         linux arm '' \
         linux arm64 '' \
-        windows amd64 '.exe' \
-        windows 386 '.exe' \
         darwin amd64 '' \
         darwin arm64 ''
     while [ $# -gt 0 ]; do
