@@ -37,8 +37,11 @@ type (
 	reposDiscoveredMsg struct {
 		repos []config.RepoInfo
 	}
-	tickMsg     time.Time
-	clearMsgMsg struct{}
+	tickMsg      time.Time
+	clearMsgMsg  struct{}
+	editFileMsg  struct {
+		err error
+	}
 )
 
 // backToMainMsg signals that the log viewer wants to return to the dashboard.

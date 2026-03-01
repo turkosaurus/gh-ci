@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -551,6 +552,16 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 			}
 		}
 
+	case key.Matches(msg, d.keys.Edit):
+		if d.activePanel == panelWorkflows {
+			if wfName := d.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+				if file, ok := d.workflowFiles[wfName]; ok {
+					fullPath := filepath.Join(gitRoot(), workflowDirGitHub, file)
+					return d, editFile(fullPath)
+				}
+			}
+		}
+
 	case key.Matches(msg, d.keys.Back):
 		if d.activePanel > 0 {
 			d.activePanel--
@@ -1046,6 +1057,7 @@ func (d Dashboard) renderHelpBar(width int, message Message) string {
 	if d.activePanel == panelWorkflows {
 		if wfName := d.selectedWorkflow(); wfName != "" && wfName != workflowAll {
 			if _, ok := d.workflowFiles[wfName]; ok {
+				items = append(items, bindingHelp(d.styles, d.keys.Edit))
 				items = append(items, bindingHelp(d.styles, d.keys.Dispatch))
 			}
 		}

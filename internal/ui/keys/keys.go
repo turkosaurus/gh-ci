@@ -64,6 +64,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("d"),
 			key.WithHelp("d", "dispatch"),
 		),
+		Edit: key.NewBinding(
+			key.WithKeys("e"),
+			key.WithHelp("e", "edit file"),
+		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),

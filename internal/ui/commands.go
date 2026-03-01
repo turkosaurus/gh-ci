@@ -2,6 +2,8 @@ package ui
 
 import (
 	"log/slog"
+	"os"
+	"os/exec"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -125,4 +127,21 @@ func clearMsg(timeout time.Duration) tea.Cmd {
 	return tea.Tick(timeout, func(t time.Time) tea.Msg {
 		return clearMsgMsg{}
 	})
+}
+
+func openEditor(filePath string) *exec.Cmd {
+	editor := os.Getenv("EDITOR")
+	if editor == "" {
+		editor = "vi"
+	}
+	return exec.Command(editor, filePath)
+}
+
+func editFile(filePath string) tea.Cmd {
+	return tea.ExecProcess(
+		openEditor(filePath),
+		func(err error) tea.Msg {
+			return editFileMsg{err: err}
+		},
+	)
 }

@@ -209,6 +209,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case clearMsgMsg:
 		a.message = messageConfirming("")
+
+	case editFileMsg:
+		if msg.err != nil {
+			a.message = messageError("error opening editor: " + msg.err.Error())
+		} else {
+			a.message = messageConfirming("")
+		}
 	}
 
 	return a, tea.Batch(cmds...)
