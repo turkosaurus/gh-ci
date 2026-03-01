@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/grackleclub/log"
 )
 
 // newFileLogger sets up a "text" or "json" logger.
@@ -32,13 +34,13 @@ func newFileLogger(format string) (*slog.Logger, error) {
 			}
 			rotated = true
 		}
-		err = os.MkdirAll(filepath.Dir(logFile), 0755)
+		err = os.MkdirAll(filepath.Dir(logFile), 0o755)
 		if err != nil {
 			return nil, fmt.Errorf("create log directory: %w", err)
 		}
 	}
 
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open log file: %w", err)
 	}
@@ -52,6 +54,9 @@ func newFileLogger(format string) (*slog.Logger, error) {
 		level = slog.LevelWarn
 	}
 
+	log.New(slog.HandlerOptions{
+		Level: level,
+	}, f)
 	var handler slog.Handler
 	switch format {
 	case "json":
