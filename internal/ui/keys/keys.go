@@ -25,6 +25,7 @@ type KeyMap struct {
 	HalfPageDown key.Binding
 	Top          key.Binding
 	Bottom       key.Binding
+	Help         key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings
@@ -113,6 +114,10 @@ func DefaultKeyMap() KeyMap {
 		SearchPrev: key.NewBinding(
 			key.WithKeys("p"),
 			key.WithHelp("p", "prev match"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
 		),
 	}
 }

@@ -262,6 +262,34 @@ func bindingHelp(s styles.Styles, b key.Binding) string {
 }
 
 func renderTitle(width int) string {
-	title := fmt.Sprintf("ci (%s)", Version)
-	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
+	// https://patorjk.com/software/taag/
+	blockLines := []string{
+		// "⡎⠑ ⡇",
+		// "⠣⠔ ⠇",
+		"░█▀▀░▀█▀░▀█▀░█░█░█░█░█▀▄░░░█▀▀░▀█▀",
+		"░█░█░░█░░░█░░█▀█░█░█░█▀▄░░░█░░░░█░",
+		"░▀▀▀░▀▀▀░░▀░░▀░▀░▀▀▀░▀▀░░░░▀▀▀░▀▀▀",
+	}
+	versionLine := Version
+
+	titleStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(styles.ColorPurple)
+
+	versionStyle := lipgloss.NewStyle().
+		Foreground(styles.ColorCyan)
+
+	// Render box with version on middle row
+	for i, line := range blockLines {
+		blockLines[i] = titleStyle.Render(line)
+		if i == 1 {
+			blockLines[i] += "  " + versionStyle.Render(versionLine)
+		}
+	}
+	content := lipgloss.JoinVertical(lipgloss.Left, blockLines...)
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Align(lipgloss.Center).
+		Render(content)
 }

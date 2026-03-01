@@ -48,6 +48,7 @@ type Dashboard struct {
 	branchPicker   picker.Picker
 	confirmDialog  ConfirmDialog
 	dispatchDialog DispatchDialog
+	helpModal      HelpModal
 
 	nearbyRepos []config.RepoInfo
 
@@ -161,6 +162,10 @@ func (d *Dashboard) SetJobs(jobs []types.Job) {
 
 // Update handles a key event and returns the updated dashboard and command.
 func (d Dashboard) Update(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
+	if d.helpModal.Active() {
+		d.helpModal.Close()
+		return d, nil
+	}
 	if d.repoPicker.Active() {
 		return d.handleRepoSelect(msg)
 	}
@@ -554,6 +559,10 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	case key.Matches(msg, d.keys.Refresh):
 		d.PendingMessage = "refreshing..."
 		return d, refreshRuns(d.client, d.config.Repos, time.Time{})
+
+	case key.Matches(msg, d.keys.Help):
+		d.helpModal.Open()
+		return d, nil
 	}
 
 	return d, nil
@@ -571,7 +580,7 @@ func (d Dashboard) View(width, height int, message string, loading bool) string 
 		h = 24
 	}
 
-	bodyH := h - 3 // title + panel-headers + help
+	bodyH := h - 5 // 3-line title + panel-headers + help
 	// set minimum to avoid rendering issues when tiny
 	if bodyH < 5 {
 		bodyH = 5
@@ -605,12 +614,17 @@ func (d Dashboard) View(width, height int, message string, loading bool) string 
 		lipgloss.NewStyle().Width(detailW).Height(bodyH).Render(d.renderDetail(detailW)),
 	)
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	base := lipgloss.JoinVertical(lipgloss.Left,
 		renderTitle(w),
 		d.renderPanelHeaders(workflowW, runsW, detailW),
 		body,
 		d.renderHelpBar(w, message),
 	)
+
+	if d.helpModal.Active() {
+		return d.helpModal.View(d.keys, d.styles, w, h, true)
+	}
+	return base
 }
 
 func (d Dashboard) renderPanelHeaders(workflowW, runsW, detailW int) string {
@@ -1039,7 +1053,7 @@ func (d Dashboard) renderHelpBar(width int, message string) string {
 	items = append(items, bindingHelp(d.styles, d.keys.Open))
 
 	left := strings.Join(items, "  ")
-	right := bindingHelp(d.styles, d.keys.Quit)
+	right := bindingHelp(d.styles, d.keys.Quit) + "  " + bindingHelp(d.styles, d.keys.Help)
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
 		gap = 2

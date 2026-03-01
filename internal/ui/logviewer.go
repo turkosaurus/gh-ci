@@ -25,6 +25,7 @@ type LogViewer struct {
 	contextLines []logContextLine
 	matchGroups  []int
 	matchIdx     int
+	helpModal    HelpModal
 
 	styles styles.Styles
 	keys   keys.KeyMap
@@ -55,6 +56,10 @@ func (lv *LogViewer) SetLogs(logs, jobName string) {
 
 // Update handles key events for the log viewer.
 func (lv LogViewer) Update(msg tea.KeyMsg, height int) (LogViewer, tea.Cmd) {
+	if lv.helpModal.Active() {
+		lv.helpModal.Close()
+		return lv, nil
+	}
 	if lv.searching {
 		return lv.handleSearch(msg)
 	}
@@ -127,6 +132,10 @@ func (lv LogViewer) Update(msg tea.KeyMsg, height int) (LogViewer, tea.Cmd) {
 
 	case key.Matches(msg, lv.keys.Bottom):
 		lv.logOffset = max(0, displayLen-visibleLines)
+
+	case key.Matches(msg, lv.keys.Help):
+		lv.helpModal.Open()
+		return lv, nil
 	}
 
 	return lv, nil
@@ -257,6 +266,7 @@ func (lv LogViewer) View(width, height int) string {
 			lv.styles.HelpKey.Render("↑/↓") + " " + lv.styles.HelpDesc.Render("scroll"),
 			lv.styles.HelpKey.Render(lv.keys.Search.Help().Key) + " " + lv.styles.HelpDesc.Render("new search"),
 			lv.styles.HelpKey.Render("h/esc") + " " + lv.styles.HelpDesc.Render("back"),
+			bindingHelp(lv.styles, lv.keys.Help),
 			bindingHelp(lv.styles, lv.keys.Quit),
 		}
 		sb.WriteString(lv.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
@@ -268,10 +278,15 @@ func (lv LogViewer) View(width, height int) string {
 			lv.styles.HelpKey.Render("ctrl+u/d") + " " + lv.styles.HelpDesc.Render("½ page"),
 			bindingHelp(lv.styles, lv.keys.Search),
 			lv.styles.HelpKey.Render("h/esc/⌫") + " " + lv.styles.HelpDesc.Render("back"),
+			bindingHelp(lv.styles, lv.keys.Help),
 			bindingHelp(lv.styles, lv.keys.Quit),
 		}
 		sb.WriteString(lv.styles.Dimmed.Render(strings.Join(helpItems, "  ")))
 	}
 
-	return sb.String()
+	result := sb.String()
+	if lv.helpModal.Active() {
+		return lv.helpModal.View(lv.keys, lv.styles, w, h, false)
+	}
+	return result
 }
