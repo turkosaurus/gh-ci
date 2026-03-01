@@ -63,6 +63,24 @@ var Themes = map[string]Theme{
 			Key:      lipgloss.Color("#7AA2F7"),
 		},
 	},
+	"tokyo-night-alt": {
+		Name: "tokyo-night-alt",
+		Palette: Palette{
+			Accent:   lipgloss.Color("#BB9AF7"),
+			Bg:       lipgloss.Color("#1A1B26"),
+			BgLight:  lipgloss.Color("#2B2D42"),
+			Subtle:   lipgloss.Color("#565F89"),
+			Fg:       lipgloss.Color("#C0CAF5"),
+			FgDim:    lipgloss.Color("#565F89"),
+			Success:  lipgloss.Color("#9ECE6A"),
+			Failure:  lipgloss.Color("#F7768E"),
+			Running:  lipgloss.Color("#E0AF68"),
+			Branch:   lipgloss.Color("#7AA2F7"),
+			Repo:     lipgloss.Color("#BB9AF7"),
+			Duration: lipgloss.Color("#FF9E64"),
+			Key:      lipgloss.Color("#BB9AF7"),
+		},
+	},
 	"light": {
 		Name: "light",
 		Palette: Palette{

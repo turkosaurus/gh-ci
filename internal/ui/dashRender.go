@@ -193,7 +193,7 @@ func (d Dashboard) renderWorkflows(width, height int) string {
 		for len(rows) < height-1 {
 			rows = append(rows, "")
 		}
-		rows = append(rows, d.styles.Dimmed.Render(gh.TruncateString(filenameStr, width-2)))
+		rows = append(rows, lipgloss.NewStyle().Foreground(d.styles.P.Branch).Render(gh.TruncateString(filenameStr, width-2)))
 	}
 
 	return strings.Join(rows, "\n")
