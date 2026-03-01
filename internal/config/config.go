@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -15,6 +16,8 @@ type Config struct {
 	PrimaryBranch   string   `yaml:"default_branch"`      // e.g. "main"
 	RefreshInterval int      `yaml:"refresh_interval"`    // seconds
 	MsgTimeout      int      `yaml:"default_msg_timeout"` // seconds
+	LogPath         string   `yaml:"log_path"`            // optional log file path
+	LogRotateAge    int      `yaml:"log_rotate_age"`      // truncate log flie if not modified (seconds)
 }
 
 // DefaultConfig returns the default configuration
@@ -24,6 +27,8 @@ func DefaultConfig() *Config {
 		PrimaryBranch:   "main",
 		RefreshInterval: 2,
 		MsgTimeout:      3,
+		LogPath:         logPath(),
+		LogRotateAge:    10, // TODO: change to hours so as to be session useful
 	}
 }
 
@@ -32,7 +37,7 @@ func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
 	// Try to load config file
-	configPath := getConfigPath()
+	configPath := configPath()
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
@@ -54,8 +59,18 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// getConfigPath returns the path to the config file
-func getConfigPath() string {
+// logPath returns the default log path, trying to use a user-specific location if possible
+func logPath() string {
+	logPath := path.Join("/tmp", "gh-ci", "ci.log")
+	home, err := os.UserHomeDir()
+	if err == nil {
+		logPath = filepath.Join(home, ".config", "gh-ci", "ci.log")
+	}
+	return logPath
+}
+
+// configPath returns the path to the config file
+func configPath() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ""

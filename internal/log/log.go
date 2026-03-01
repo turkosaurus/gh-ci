@@ -1,4 +1,4 @@
-package main
+package log
 
 import (
 	"fmt"
@@ -10,35 +10,25 @@ import (
 	"github.com/grackleclub/log"
 )
 
-// newFileLogger sets up a "text" or "json" logger.
-func newFileLogger(format string) (*slog.Logger, error) {
+// NewFileLogger creates a new file writer, truncating the file if
+// it hasn't been written to in overwriteAge.
+func NewFileLogger(path string, overwriteAge time.Duration) (*slog.Logger, error) {
 	rotated := false
-	maxAge := 1 * time.Second // FIXME: be realistic
-
-	// set path
-	logFile := os.Getenv("GH_CI_LOG_FILE")
-	if logFile == "" {
-		home, err := os.UserHomeDir()
-		logFile = filepath.Join(home, ".config", "gh-ci", "ci.log") // TODO: integrate with config
-		if err != nil {
-			return nil, fmt.Errorf("determine log dir: %w", err)
-		}
-	}
 	// ensure dir
-	err := os.MkdirAll(filepath.Dir(logFile), 0o755)
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
 	if err != nil {
 		return nil, fmt.Errorf("create log directory: %w", err)
 	}
 	// check existing
-	info, err := os.Stat(logFile)
+	info, err := os.Stat(path)
 	if err != nil {
 		// create if not exists
 		if os.IsNotExist(err) {
-			_, err := os.Create(logFile)
+			_, err := os.Create(path)
 			if err != nil {
 				return nil, fmt.Errorf("create log file: %w", err)
 			}
-			info, err = os.Stat(logFile)
+			info, err = os.Stat(path)
 			if err != nil {
 				return nil, fmt.Errorf("stat log file after creation: %w", err)
 			}
@@ -47,15 +37,15 @@ func newFileLogger(format string) (*slog.Logger, error) {
 		}
 	}
 	// truncate if old
-	if time.Since(info.ModTime()) > maxAge {
-		err = os.Truncate(logFile, 0)
+	if time.Since(info.ModTime()) > overwriteAge {
+		err = os.Truncate(path, 0)
 		if err != nil {
 			return nil, fmt.Errorf("rotate log file: %w", err)
 		}
 		rotated = true
 	}
 	// open ready file
-	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open log file: %w", err)
 	}
@@ -74,7 +64,7 @@ func newFileLogger(format string) (*slog.Logger, error) {
 		return nil, fmt.Errorf("create logger: %w", err)
 	}
 	logger.Debug("initialized text file logger",
-		"path", logFile,
+		"path", path,
 		"level", level.String(),
 	)
 	if rotated {

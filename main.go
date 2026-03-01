@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/turkosaurus/gh-ci/internal/config"
+	"github.com/turkosaurus/gh-ci/internal/log"
 	"github.com/turkosaurus/gh-ci/internal/ui"
 )
 
@@ -30,7 +32,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger, err := newFileLogger("text")
+	logger, err := log.NewFileLogger(cfg.LogPath, time.Duration(cfg.LogRotateAge)*time.Second)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: cannot initialize logger: %v\n", err)
 		os.Exit(1)
