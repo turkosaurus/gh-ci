@@ -282,7 +282,7 @@ func renderTitle(width int) string {
 	// Render box with version on middle row
 	for i, line := range blockLines {
 		blockLines[i] = titleStyle.Render(line)
-		if i == 1 {
+		if i == len(blockLines)/2 {
 			blockLines[i] += "  " + versionStyle.Render(versionLine)
 		}
 	}

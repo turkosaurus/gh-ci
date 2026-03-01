@@ -37,7 +37,7 @@ func (dd DispatchDialog) Update(msg tea.KeyMsg, client gh.Client) (DispatchDialo
 
 // HelpView returns the help bar when the dispatch dialog is active.
 func (dd DispatchDialog) HelpView(s styles.Styles) string {
-	return s.Normal.Render("dispatch "+dd.file+" on "+dd.ref+"?") + "  " +
+	return s.DialogPrompt.Render("dispatch "+dd.file+" on "+dd.ref+"?") + "  " +
 		s.HelpKey.Render("y") + " " + s.HelpDesc.Render("yes") + "  " +
 		s.HelpKey.Render("esc") + " " + s.HelpDesc.Render("cancel")
 }

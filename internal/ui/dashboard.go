@@ -571,7 +571,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 // ── Render methods ──────────────────────────────────────────────────────────
 
 // View renders the complete dashboard (title + panels + help bar).
-func (d Dashboard) View(width, height int, message string, loading bool) string {
+func (d Dashboard) View(width, height int, message Message, loading bool) string {
 	w, h := width, height
 	if w == 0 {
 		w = 80
@@ -1015,7 +1015,7 @@ func (d Dashboard) renderDetail(width int) string {
 	return sb.String()
 }
 
-func (d Dashboard) renderHelpBar(width int, message string) string {
+func (d Dashboard) renderHelpBar(width int, message Message) string {
 	if d.confirmDialog.Active() {
 		return d.confirmDialog.HelpView(d.styles)
 	}
@@ -1032,12 +1032,12 @@ func (d Dashboard) renderHelpBar(width int, message string) string {
 		return d.branchPicker.HelpView(d.styles)
 	}
 
-	if message != "" {
-		return d.styles.Dimmed.Render(message)
+	if message.text != "" {
+		return d.styles.MessageStyle(message.msgType).Render(message.text)
 	}
 
 	var items []string
-	if run := d.selectedRun(); run != nil {
+	if run := d.selectedRun(); run != nil && d.activePanel != panelWorkflows {
 		items = append(items, bindingHelp(d.styles, d.keys.Rerun))
 		if run.Status == types.RunStatusInProgress {
 			items = append(items, bindingHelp(d.styles, d.keys.Cancel))

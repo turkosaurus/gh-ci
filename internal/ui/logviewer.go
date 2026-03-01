@@ -26,19 +26,21 @@ type LogViewer struct {
 	matchGroups  []int
 	matchIdx     int
 	helpModal    HelpModal
+	logContext   int
 
 	styles styles.Styles
 	keys   keys.KeyMap
 }
 
-func NewLogViewer(s styles.Styles, k keys.KeyMap) LogViewer {
+func NewLogViewer(s styles.Styles, k keys.KeyMap, logContext int) LogViewer {
 	ti := textinput.New()
 	ti.Placeholder = "search logs..."
 	ti.CharLimit = 100
 	return LogViewer{
-		styles:    s,
-		keys:      k,
-		textInput: ti,
+		styles:     s,
+		keys:       k,
+		textInput:  ti,
+		logContext: logContext,
 	}
 }
 
@@ -155,7 +157,7 @@ func (lv LogViewer) handleSearch(msg tea.KeyMsg) (LogViewer, tea.Cmd) {
 		lv.matchIdx = 0
 		if lv.logQuery != "" {
 			lines := strings.Split(lv.logs, "\n")
-			lv.contextLines, lv.matchGroups = buildLogContext(lines, lv.logQuery, 3)
+			lv.contextLines, lv.matchGroups = buildLogContext(lines, lv.logQuery, lv.logContext)
 		} else {
 			lv.contextLines = nil
 			lv.matchGroups = nil

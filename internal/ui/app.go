@@ -27,6 +27,33 @@ const (
 //	go build -ldflags "-X 'github.com/turkosaurus/gh-ci/internal/ui.Version=1.2.3'"
 var Version string = "dev"
 
+// Message represents a status message with a type
+type Message struct {
+	text      string
+	msgType   styles.MessageType
+}
+
+func newMessage(text string, msgType styles.MessageType) Message {
+	return Message{text: text, msgType: msgType}
+}
+
+// messageConfirming creates a message for immediate user action feedback (purple).
+// Used for: "re-running...", "dispatching...", etc. - confirmation that action is queued.
+func messageConfirming(text string) Message {
+	return newMessage(text, styles.MessageTypeInfo)
+}
+
+// messageCompleted creates a message for async operation completion (green).
+// Used for: "re-run triggered", "workflow cancelled", "dispatched ...", etc. - action finished.
+func messageCompleted(text string) Message {
+	return newMessage(text, styles.MessageTypeSuccess)
+}
+
+// messageError creates an error message (red).
+func messageError(text string) Message {
+	return newMessage(text, styles.MessageTypeError)
+}
+
 // App is the top-level tea.Model.
 type App struct {
 	config *config.Config
@@ -44,7 +71,7 @@ type App struct {
 	localBranch   string
 
 	width, height int
-	message       string
+	message       Message
 
 	dashboard Dashboard
 	logViewer LogViewer
@@ -68,7 +95,7 @@ func NewApp(cfg *config.Config) App {
 		defaultBranch: defaultBranch,
 		localBranch:   localBranch,
 		dashboard:     NewDashboard(cfg, client, runs, s, k, defaultBranch, localBranch),
-		logViewer:     NewLogViewer(s, k),
+		logViewer:     NewLogViewer(s, k, cfg.LogContext),
 	}
 }
 
@@ -94,7 +121,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			a.dashboard, cmd = a.dashboard.Update(msg)
 			if a.dashboard.PendingMessage != "" {
-				a.message = a.dashboard.PendingMessage
+				a.message = messageConfirming(a.dashboard.PendingMessage)
 				a.dashboard.PendingMessage = ""
 			}
 			return a, cmd
@@ -120,7 +147,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			a.runs.SetError(msg.err)
 			if !a.runs.HasData() {
-				a.message = "error: " + msg.err.Error()
+				a.message = messageError("error: " + msg.err.Error())
 			}
 		} else {
 			if msg.incremental {
@@ -149,9 +176,9 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case logsLoadedMsg:
-		a.message = ""
+		a.message = messageConfirming("")
 		if msg.err != nil {
-			a.message = "error loading logs: " + msg.err.Error()
+			a.message = messageError("error loading logs: " + msg.err.Error())
 		} else {
 			a.logViewer.SetLogs(msg.logs, msg.jobName)
 			a.screen = screenLogs
@@ -159,17 +186,17 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionResultMsg:
 		if msg.err != nil {
-			a.message = "error: " + msg.err.Error()
+			a.message = messageError("error: " + msg.err.Error())
 		} else {
-			a.message = msg.message
+			a.message = messageCompleted(msg.message)
 		}
 		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos, time.Time{}))
 
 	case dispatchResultMsg:
 		if msg.err != nil {
-			a.message = "error: " + msg.err.Error()
+			a.message = messageError("error: " + msg.err.Error())
 		} else {
-			a.message = msg.message
+			a.message = messageCompleted(msg.message)
 		}
 		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos, time.Time{}))
 
@@ -181,7 +208,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.screen = screenDashboard
 
 	case clearMsgMsg:
-		a.message = ""
+		a.message = messageConfirming("")
 	}
 
 	return a, tea.Batch(cmds...)

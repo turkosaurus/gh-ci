@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const DefaultLogContext = 3
+
 // Config holds the application configuration
 type Config struct {
 	Repos           []string `yaml:"-"`
@@ -18,6 +20,7 @@ type Config struct {
 	MsgTimeout      int      `yaml:"default_msg_timeout"` // seconds
 	LogPath         string   `yaml:"log_path"`            // optional log file path
 	LogRotateAge    int      `yaml:"log_rotate_age"`      // truncate log flie if not modified (seconds)
+	LogContext      int      `yaml:"log_context"`         // lines of context around each log search match
 }
 
 // DefaultConfig returns the default configuration
@@ -29,6 +32,7 @@ func DefaultConfig() *Config {
 		MsgTimeout:      3,
 		LogPath:         logPath(),
 		LogRotateAge:    10, // TODO: change to hours so as to be session useful
+		LogContext:      DefaultLogContext,
 	}
 }
 

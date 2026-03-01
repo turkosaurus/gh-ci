@@ -39,7 +39,7 @@ func (cd ConfirmDialog) Update(msg tea.KeyMsg, client gh.Client) (ConfirmDialog,
 
 // HelpView returns the help bar when the confirm dialog is active.
 func (cd ConfirmDialog) HelpView(s styles.Styles) string {
-	return s.Normal.Render("re-run?") + "  " +
+	return s.DialogPrompt.Render("re-run?") + "  " +
 		s.HelpKey.Render("y") + " " + s.HelpDesc.Render("normal") + "  " +
 		s.HelpKey.Render("d") + " " + s.HelpDesc.Render("debug logs") + "  " +
 		s.HelpKey.Render("esc") + " " + s.HelpDesc.Render("cancel")

@@ -2,6 +2,15 @@ package styles
 
 import "github.com/charmbracelet/lipgloss"
 
+// MessageType represents the type of status message
+type MessageType int
+
+const (
+	MessageTypeInfo MessageType = iota
+	MessageTypeSuccess
+	MessageTypeError
+)
+
 // Colors
 var (
 	ColorRed     = lipgloss.Color("#FF5555")
@@ -43,6 +52,10 @@ type Styles struct {
 	FilterActive  lipgloss.Style
 	Header        lipgloss.Style
 	Border        lipgloss.Style
+	MessageInfo   lipgloss.Style
+	MessageSuccess lipgloss.Style
+	MessageError  lipgloss.Style
+	DialogPrompt  lipgloss.Style
 }
 
 // DefaultStyles returns the default styles for the UI
@@ -130,6 +143,27 @@ func DefaultStyles() Styles {
 		Border: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(ColorSubtle),
+
+		MessageInfo: lipgloss.NewStyle().
+			Background(ColorPurple).
+			Foreground(ColorBg).
+			Padding(0, 1),
+
+		MessageSuccess: lipgloss.NewStyle().
+			Background(ColorGreen).
+			Foreground(ColorBg).
+			Padding(0, 1),
+
+		MessageError: lipgloss.NewStyle().
+			Background(ColorRed).
+			Foreground(ColorBg).
+			Padding(0, 1),
+
+		DialogPrompt: lipgloss.NewStyle().
+			Bold(true).
+			Background(ColorPurple).
+			Foreground(ColorBg).
+			Padding(0, 1),
 	}
 }
 
@@ -180,5 +214,17 @@ func (s Styles) StatusStyle(status, conclusion string) lipgloss.Style {
 		return s.StatusRunning
 	default:
 		return s.StatusPending
+	}
+}
+
+// MessageStyle returns the appropriate style for a message type
+func (s Styles) MessageStyle(t MessageType) lipgloss.Style {
+	switch t {
+	case MessageTypeSuccess:
+		return s.MessageSuccess
+	case MessageTypeError:
+		return s.MessageError
+	default:
+		return s.MessageInfo
 	}
 }

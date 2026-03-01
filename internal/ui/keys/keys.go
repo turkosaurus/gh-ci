@@ -10,6 +10,7 @@ type KeyMap struct {
 	Rerun        key.Binding
 	Cancel       key.Binding
 	Dispatch     key.Binding
+	Edit         key.Binding
 	Right        key.Binding
 	Open         key.Binding
 	Refresh      key.Binding
