@@ -77,8 +77,18 @@ type App struct {
 	logViewer LogViewer
 }
 
+func resolveTheme(name string) string {
+	if name != "auto" {
+		return name
+	}
+	if lipgloss.HasDarkBackground() {
+		return "dracula"
+	}
+	return "light"
+}
+
 func NewApp(cfg *config.Config) App {
-	s := styles.NewStyles(styles.ThemeByName(cfg.Theme).Palette)
+	s := styles.NewStyles(styles.ThemeByName(resolveTheme(cfg.Theme)).Palette)
 	k := keys.DefaultKeyMap()
 	runs := &Fetchable[types.RunMap]{Fetching: true}
 	client := gh.NewClient(runs)
@@ -234,14 +244,18 @@ const (
 )
 
 func (a App) View() string {
+	bg := lipgloss.WithWhitespaceBackground(a.styles.P.Bg)
 	if a.width > 0 && a.height > 0 && (a.width < minWidth || a.height < minHeight) {
 		msg := fmt.Sprintf("terminal too small (%dx%d, need %dx%d)", a.width, a.height, minWidth, minHeight)
-		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, msg)
+		return lipgloss.Place(a.width, a.height, lipgloss.Center, lipgloss.Center, msg, bg)
 	}
+	var content string
 	if a.screen == screenLogs {
-		return a.logViewer.View(a.width, a.height)
+		content = a.logViewer.View(a.width, a.height)
+	} else {
+		content = a.dashboard.View(a.width, a.height, a.message, a.runs.IsFetching())
 	}
-	return a.dashboard.View(a.width, a.height, a.message, a.runs.IsFetching())
+	return lipgloss.Place(a.width, a.height, lipgloss.Left, lipgloss.Top, content, bg)
 }
 
 // deriveWorkflowFiles populates workflowFiles (name → filename) from

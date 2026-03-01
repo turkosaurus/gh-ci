@@ -36,7 +36,7 @@ func DefaultConfig() *Config {
 		LogRotateAge:    10, // TODO: change to hours so as to be session useful
 		LogContext:      DefaultLogContext,
 		LogWrap:         false,
-		Theme:           "dracula",
+		Theme:           "auto",
 	}
 }
 
