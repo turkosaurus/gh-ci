@@ -9,8 +9,9 @@ import (
 
 type (
 	runsUpdatedMsg struct {
-		runs types.RunMap
-		err  error
+		runs        types.RunMap
+		err         error
+		incremental bool
 	}
 	jobsLoadedMsg struct {
 		jobs []types.Job

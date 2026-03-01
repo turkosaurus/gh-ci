@@ -204,6 +204,44 @@ func flattenRunMap(rm types.RunMap) []types.WorkflowRun {
 	return runs
 }
 
+// copyRunMap makes a deep copy of a RunMap.
+func copyRunMap(src types.RunMap) types.RunMap {
+	result := make(types.RunMap)
+	for repo, repoMap := range src {
+		result[repo] = make(map[string][]types.WorkflowRun)
+		for branch, runs := range repoMap {
+			result[repo][branch] = append([]types.WorkflowRun{}, runs...)
+		}
+	}
+	return result
+}
+
+// mergeRunMap merges a flat slice of updated runs into an existing RunMap.
+// Runs with matching IDs are replaced; new runs are inserted at the beginning of their branch list.
+func mergeRunMap(base types.RunMap, updates []types.WorkflowRun) types.RunMap {
+	result := copyRunMap(base)
+	for _, run := range updates {
+		repo, branch := run.Repository.FullName, run.HeadBranch
+		if result[repo] == nil {
+			result[repo] = make(map[string][]types.WorkflowRun)
+		}
+		runs := result[repo][branch]
+		replaced := false
+		for i, existing := range runs {
+			if existing.ID == run.ID {
+				runs[i] = run
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			// Prepend new run so recent runs appear first
+			result[repo][branch] = append([]types.WorkflowRun{run}, runs...)
+		}
+	}
+	return result
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a

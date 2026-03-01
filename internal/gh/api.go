@@ -46,17 +46,19 @@ func NewClient(state RunState) Client {
 }
 
 // ListWorkflowRuns fetches workflow runs for a repository.
-// On initial fetch, fetches only the first page for speed.
-// On subsequent fetches, uses --paginate to get all pages.
+// Three-way dispatch:
+// - No data: fetch only first page for speed (fast startup).
+// - Has data, since is zero: fetch all pages (forced refresh).
+// - Has data, since is set: fetch paginated with created filter from since-2h
+//   (to catch in-progress runs that started before last fetch).
 func (c *ghClient) ListWorkflowRuns(repo string, since time.Time) ([]types.WorkflowRun, error) {
-	fmtString := "2006-01-02"
-	t := time.Now().Add(-52 * 7 * 24 * time.Hour).Format(fmtString)
-	tStr := fmt.Sprintf(">%s", t)
-
 	var allRuns []types.WorkflowRun
 
 	// Just get the first page on initial run for speed
 	if !c.state.HasData() {
+		fmtString := "2006-01-02"
+		t := time.Now().Add(-52 * 7 * 24 * time.Hour).Format(fmtString)
+		tStr := fmt.Sprintf(">%s", t)
 		endpoint := fmt.Sprintf("repos/%s/actions/runs?page=1&per_page=40&created=%s", repo, tStr)
 		output, err := c.ghApiCall(http.MethodGet, endpoint)
 		if err != nil {
@@ -75,8 +77,27 @@ func (c *ghClient) ListWorkflowRuns(repo string, since time.Time) ([]types.Workf
 		return allRuns, nil
 	}
 
+	// Build the created filter based on since parameter
+	tStr := ""
+	if !since.IsZero() {
+		// Subtract 2h overlap to catch in-progress runs from before last fetch
+		cutoff := since.Add(-2 * time.Hour).UTC().Format(time.RFC3339)
+		tStr = fmt.Sprintf("&created=>%s", cutoff)
+		slog.Debug("incremental fetch",
+			"repo", repo,
+			"since", since,
+			"cutoff", cutoff,
+		)
+	} else {
+		// Full fetch: use 52-week lookback
+		fmtString := "2006-01-02"
+		t := time.Now().Add(-52 * 7 * 24 * time.Hour).Format(fmtString)
+		tStr = fmt.Sprintf("&created=>%s", t)
+		slog.Debug("full fetch", "repo", repo)
+	}
+
 	// On subsequent fetches, paginate through all results
-	endpoint := fmt.Sprintf("repos/%s/actions/runs?per_page=40&created=%s", repo, tStr)
+	endpoint := fmt.Sprintf("repos/%s/actions/runs?per_page=40%s", repo, tStr)
 	output, err := c.ghApiPaginated(http.MethodGet, endpoint)
 	if err != nil {
 		return nil, err
@@ -87,7 +108,11 @@ func (c *ghClient) ListWorkflowRuns(repo string, since time.Time) ([]types.Workf
 		return nil, fmt.Errorf("failed to parse paginated workflow runs: %w", err)
 	}
 	allRuns = append(allRuns, response.WorkflowRuns...)
-	slog.Debug("fetch all runs", "repo", repo, "count", len(allRuns))
+	slog.Debug("fetch runs",
+		"repo", repo,
+		"count", len(allRuns),
+		"incremental", !since.IsZero(),
+	)
 	return allRuns, nil
 }
 

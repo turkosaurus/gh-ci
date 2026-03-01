@@ -35,21 +35,30 @@ func discoverRepos() tea.Cmd {
 	}
 }
 
-func refreshRuns(client gh.Client, repos []string) tea.Cmd {
+func refreshRuns(client gh.Client, repos []string, since time.Time) tea.Cmd {
 	return func() tea.Msg {
-		runMap := make(types.RunMap)
+		var allRuns []types.WorkflowRun
 		for _, repo := range repos {
-			repoRuns, err := client.ListWorkflowRuns(repo, time.Time{})
+			repoRuns, err := client.ListWorkflowRuns(repo, since)
 			if err != nil {
 				return runsUpdatedMsg{err: err}
 			}
-			repoMap := make(map[string][]types.WorkflowRun)
-			for _, r := range repoRuns {
-				repoMap[r.HeadBranch] = append(repoMap[r.HeadBranch], r)
-			}
-			runMap[repo] = repoMap
+			allRuns = append(allRuns, repoRuns...)
 		}
-		return runsUpdatedMsg{runs: runMap}
+
+		// Build RunMap with the new data for both incremental and full fetches
+		runMap := make(types.RunMap)
+		for _, r := range allRuns {
+			if runMap[r.Repository.FullName] == nil {
+				runMap[r.Repository.FullName] = make(map[string][]types.WorkflowRun)
+			}
+			runMap[r.Repository.FullName][r.HeadBranch] = append(
+				runMap[r.Repository.FullName][r.HeadBranch], r)
+		}
+
+		// Mark whether this is an incremental fetch or full fetch
+		isIncremental := !since.IsZero()
+		return runsUpdatedMsg{runs: runMap, err: nil, incremental: isIncremental}
 	}
 }
 

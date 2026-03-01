@@ -216,7 +216,7 @@ func (d Dashboard) handleRepoSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 		d.cursor = 0
 		d.jobCursor = 0
 		d.workflowCursor = 1
-		return d, refreshRuns(d.client, d.config.Repos)
+		return d, refreshRuns(d.client, d.config.Repos, time.Time{})
 	}
 	return d, cmd
 }
@@ -553,7 +553,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 
 	case key.Matches(msg, d.keys.Refresh):
 		d.PendingMessage = "refreshing..."
-		return d, refreshRuns(d.client, d.config.Repos)
+		return d, refreshRuns(d.client, d.config.Repos, time.Time{})
 	}
 
 	return d, nil

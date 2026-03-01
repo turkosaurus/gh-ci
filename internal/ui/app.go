@@ -75,7 +75,7 @@ func NewApp(cfg *config.Config) App {
 func (a App) Init() tea.Cmd {
 	return tea.Batch(
 		loadLocalDefs(),
-		refreshRuns(a.client, a.config.Repos),
+		refreshRuns(a.client, a.config.Repos, time.Time{}),
 		tick(a.config.RefreshInterval),
 	)
 }
@@ -123,7 +123,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.message = "error: " + msg.err.Error()
 			}
 		} else {
-			a.runs.SetData(msg.runs)
+			if msg.incremental {
+				// Merge updated runs into existing RunMap
+				merged := mergeRunMap(a.runs.Data, flattenRunMap(msg.runs))
+				a.runs.SetData(merged)
+			} else {
+				// Replace entire RunMap (full fetch)
+				a.runs.SetData(msg.runs)
+			}
 			a.deriveWorkflowFiles()
 			cmd := a.dashboard.SetRuns(a.runs.Data, a.localDefs.Data, a.workflowFiles)
 			if cmd != nil {
@@ -156,7 +163,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos, time.Time{}))
 
 	case dispatchResultMsg:
 		if msg.err != nil {
@@ -164,11 +171,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos, time.Time{}))
 
 	case tickMsg:
 		a.runs.SetFetching()
-		cmds = append(cmds, refreshRuns(a.client, a.config.Repos), tick(a.config.RefreshInterval))
+		cmds = append(cmds, refreshRuns(a.client, a.config.Repos, a.runs.FetchedAt()), tick(a.config.RefreshInterval))
 
 	case backToMainMsg:
 		a.screen = screenDashboard
