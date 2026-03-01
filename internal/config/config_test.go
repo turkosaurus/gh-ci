@@ -15,9 +15,9 @@ func TestParseGitRemote(t *testing.T) {
 		{"not-a-github-url", ""},
 	}
 	for _, tt := range tests {
-		got := parseGitRemote(tt.url)
+		got := GitOwnerRepo(tt.url)
 		if got != tt.want {
-			t.Errorf("parseGitRemote(%q) = %q, want %q", tt.url, got, tt.want)
+			t.Errorf("GitOwnerRepo(%q) = %q, want %q", tt.url, got, tt.want)
 		}
 	}
 }

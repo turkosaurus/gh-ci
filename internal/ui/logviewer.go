@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
-	"github.com/charmbracelet/lipgloss"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/turkosaurus/gh-ci/internal/gh"
 	"github.com/turkosaurus/gh-ci/internal/ui/keys"

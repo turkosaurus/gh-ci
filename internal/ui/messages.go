@@ -3,11 +3,12 @@ package ui
 import (
 	"time"
 
+	"github.com/turkosaurus/gh-ci/internal/config"
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
 
 type (
-	runsLoadedMsg struct {
+	runsUpdatedMsg struct {
 		runs []types.WorkflowRun
 		err  error
 	}
@@ -32,9 +33,8 @@ type (
 		defs []types.WorkflowDef
 		err  error
 	}
-	runsPartialMsg struct {
-		runs []types.WorkflowRun
-		err  error
+	reposDiscoveredMsg struct {
+		repos []config.RepoInfo
 	}
 	tickMsg     time.Time
 	clearMsgMsg struct{}

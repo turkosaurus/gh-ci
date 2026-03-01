@@ -90,9 +90,8 @@ func buildLogContext(lines []string, query string, ctx int) (rows []logContextLi
 	return
 }
 
-// deriveLists populates the workflow list, eliminating duplicates by name and file path.
-// Branch lists are also derived.
-func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]string, []string) {
+// listsFromRuns returns the valid workflow name/files and branch names.
+func listsFromRuns(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]string, []string) {
 	filesAdded := make(map[string]bool)
 	workflowList := []string{workflowAll} // initiate list with "all" selector
 	// append all local names first
@@ -121,7 +120,7 @@ func deriveLists(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]str
 			)
 		}
 	}
-	slog.Info("derived lists",
+	slog.Debug("derived lists",
 		"workflowList", workflowList,
 		"branchList", branchList,
 	)

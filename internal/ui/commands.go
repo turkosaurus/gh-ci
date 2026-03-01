@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/turkosaurus/gh-ci/internal/config"
 	"github.com/turkosaurus/gh-ci/internal/gh"
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
@@ -28,32 +29,24 @@ func loadLocalDefs() tea.Cmd {
 	}
 }
 
-func loadRunsPartial(client gh.Client, repos []string) tea.Cmd {
+func discoverRepos() tea.Cmd {
 	return func() tea.Msg {
-		var all []types.WorkflowRun
-		for _, repo := range repos {
-			runs, err := client.ListWorkflowRuns(repo, 1)
-			if err != nil {
-				return runsPartialMsg{err: err}
-			}
-			all = append(all, runs...)
-		}
-		return runsPartialMsg{runs: all}
+		return reposDiscoveredMsg{repos: config.DiscoverRepos()}
 	}
 }
 
-func loadRuns(client gh.Client, repos []string) tea.Cmd {
+func refreshRuns(cache *RunsCache, client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
 		var all []types.WorkflowRun
 		for _, repo := range repos {
-			// TODO: paginate, but also filter by type and filter by date (max age, etc)
 			runs, err := client.ListWorkflowRuns(repo, 10)
 			if err != nil {
-				return runsLoadedMsg{err: err}
+				return runsUpdatedMsg{err: err}
 			}
 			all = append(all, runs...)
 		}
-		return runsLoadedMsg{runs: all}
+		cache.Set(all)
+		return runsUpdatedMsg{runs: all}
 	}
 }
 

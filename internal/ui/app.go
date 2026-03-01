@@ -47,6 +47,7 @@ type App struct {
 	width, height int
 	message       string
 
+	runsCache *RunsCache
 	dashboard Dashboard
 	logViewer LogViewer
 }
@@ -57,6 +58,7 @@ func NewApp(cfg *config.Config) App {
 	client := gh.NewClient()
 	defaultBranch := cfg.PrimaryBranch
 	localBranch := gitBranch()
+	runsCache := &RunsCache{}
 	return App{
 		config:        cfg,
 		client:        client,
@@ -67,15 +69,19 @@ func NewApp(cfg *config.Config) App {
 		workflowFiles: make(map[string]string),
 		defaultBranch: defaultBranch,
 		localBranch:   localBranch,
-		dashboard:     NewDashboard(cfg, client, s, k, defaultBranch, localBranch),
+		runsCache:     runsCache,
+		dashboard:     NewDashboard(cfg, client, runsCache, s, k, defaultBranch, localBranch),
 		logViewer:     NewLogViewer(s, k),
 	}
 }
 
 func (a App) Init() tea.Cmd {
+	if cached, ok := a.runsCache.Get(); ok {
+		a.runs.SetLocal(cached)
+	}
 	return tea.Batch(
 		loadLocalDefs(),
-		loadRunsPartial(a.client, a.config.Repos),
+		refreshRuns(a.runsCache, a.client, a.config.Repos),
 		tick(a.config.RefreshInterval),
 	)
 }
@@ -116,21 +122,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, cmd)
 		}
 
-	case runsPartialMsg:
-		if msg.err != nil {
-			a.runs.SetError(msg.err)
-			a.message = "error: " + msg.err.Error()
-		} else {
-			a.runs.SetPartial(msg.runs)
-			a.deriveWorkflowFiles()
-			cmd := a.dashboard.SetRuns(a.runs.Data, a.localDefs.Data, a.workflowFiles)
-			if cmd != nil {
-				cmds = append(cmds, cmd)
-			}
-			cmds = append(cmds, loadRuns(a.client, a.config.Repos))
-		}
-
-	case runsLoadedMsg:
+	case runsUpdatedMsg:
 		if msg.err != nil {
 			a.runs.SetError(msg.err)
 			if !a.runs.HasData() {
@@ -144,6 +136,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, cmd)
 			}
 		}
+
+	case reposDiscoveredMsg:
+		a.dashboard.nearbyRepos = msg.repos
+		cmd := a.dashboard.repoPicker.Open(a.dashboard.repoPickerNames())
+		cmds = append(cmds, cmd)
 
 	case jobsLoadedMsg:
 		if msg.err == nil {
@@ -165,7 +162,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), loadRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.runsCache, a.client, a.config.Repos))
 
 	case dispatchResultMsg:
 		if msg.err != nil {
@@ -173,11 +170,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), loadRuns(a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.runsCache, a.client, a.config.Repos))
 
 	case tickMsg:
 		a.runs.SetFetching()
-		cmds = append(cmds, loadRuns(a.client, a.config.Repos), tick(a.config.RefreshInterval))
+		cmds = append(cmds, refreshRuns(a.runsCache, a.client, a.config.Repos), tick(a.config.RefreshInterval))
 
 	case backToMainMsg:
 		a.screen = screenDashboard

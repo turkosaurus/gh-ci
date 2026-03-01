@@ -12,7 +12,7 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Repos           []string `yaml:"repos"`
+	Repos           []string `yaml:"-"`
 	PrimaryBranch   string   `yaml:"default_branch"`      // e.g. "main"
 	RefreshInterval int      `yaml:"refresh_interval"`    // seconds
 	MsgTimeout      int      `yaml:"default_msg_timeout"` // seconds
@@ -32,31 +32,39 @@ func DefaultConfig() *Config {
 	}
 }
 
-// Load loads configuration from file or auto-detects from git
+// Load loads configuration from file and auto-detects repo from git
 func Load() (*Config, error) {
 	cfg := DefaultConfig()
 
-	// Try to load config file
 	configPath := configPath()
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err := yaml.Unmarshal(data, cfg); err != nil {
 			return nil, err
 		}
-		if cfg.PrimaryBranch == "" {
-			cfg.PrimaryBranch = "main"
-		}
-		if len(cfg.Repos) > 0 {
-			return cfg, nil
-		}
 	}
 
-	// Auto-detect from current git repo
-	repo, err := detectGitRepo()
+	repo, err := gitRepoURL()
 	if err == nil && repo != "" {
 		cfg.Repos = []string{repo}
 	}
 
 	return cfg, nil
+}
+
+// WriteDefault writes the default config to configPath if no config file exists.
+func WriteDefault() error {
+	p := configPath()
+	if _, err := os.Stat(p); err == nil {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(DefaultConfig())
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(p, data, 0o644)
 }
 
 // logPath returns the default log path, trying to use a user-specific location if possible
@@ -78,19 +86,86 @@ func configPath() string {
 	return filepath.Join(home, ".config", "gh-ci", "config.yml")
 }
 
-// detectGitRepo attempts to detect the GitHub repo from git remote
-func detectGitRepo() (string, error) {
+// gitRepoURL attempts to detect the GitHub repo from git remote
+func gitRepoURL() (string, error) {
 	cmd := exec.Command("git", "remote", "get-url", "origin")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 
-	return parseGitRemote(strings.TrimSpace(string(output))), nil
+	return GitOwnerRepo(strings.TrimSpace(string(output))), nil
 }
 
-// parseGitRemote extracts owner/repo from a git remote URL
-func parseGitRemote(url string) string {
+// RepoInfo holds a discovered repo's owner/repo name and its checked-out branch.
+type RepoInfo struct {
+	Name   string // owner/repo
+	Branch string // active branch
+}
+
+// DiscoverRepos finds GitHub repos in parent directories up to $HOME.
+// The current repo (if any) is always the first element.
+func DiscoverRepos() []RepoInfo {
+	seen := map[string]bool{}
+	var repos []RepoInfo
+
+	// Current repo first
+	if current, err := gitRepoURL(); err == nil && current != "" {
+		repos = append(repos, RepoInfo{Name: current, Branch: gitBranch(".")})
+		seen[current] = true
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return repos
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return repos
+	}
+
+	dir := filepath.Dir(cwd)
+	for dir != home && strings.HasPrefix(dir, home) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			break
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			candidate := filepath.Join(dir, e.Name())
+			if _, err := os.Stat(filepath.Join(candidate, ".git")); err != nil {
+				continue
+			}
+			cmd := exec.Command("git", "-C", candidate, "remote", "get-url", "origin")
+			out, err := cmd.Output()
+			if err != nil {
+				continue
+			}
+			repo := GitOwnerRepo(strings.TrimSpace(string(out)))
+			if repo == "" || seen[repo] {
+				continue
+			}
+			seen[repo] = true
+			repos = append(repos, RepoInfo{Name: repo, Branch: gitBranch(candidate)})
+		}
+		dir = filepath.Dir(dir)
+	}
+	return repos
+}
+
+func gitBranch(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "branch", "--show-current")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// GitOwnerRepo extracts owner/repo from a git remote URL.
+func GitOwnerRepo(url string) string {
 	// Handle SSH URLs: git@github.com:owner/repo.git
 	if strings.HasPrefix(url, "git@github.com:") {
 		url = strings.TrimPrefix(url, "git@github.com:")

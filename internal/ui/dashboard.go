@@ -43,14 +43,18 @@ type Dashboard struct {
 	branchIdx         int
 	jobs              []types.Job
 
-	branchPicker   BranchPicker
+	repoPicker     Picker
+	branchPicker   Picker
 	confirmDialog  ConfirmDialog
 	dispatchDialog DispatchDialog
+
+	nearbyRepos []config.RepoInfo
 
 	PendingMessage string // App reads and clears after each Update
 
 	config        *config.Config
 	client        gh.Client
+	runsCache     *RunsCache
 	styles        styles.Styles
 	keys          keys.KeyMap
 	allRuns       []types.WorkflowRun
@@ -58,21 +62,25 @@ type Dashboard struct {
 	workflowFiles map[string]string
 	defaultBranch string
 	localBranch   string
+	localRepo     string
 }
 
 // NewDashboard creates a Dashboard with the given dependencies.
-func NewDashboard(cfg *config.Config, client gh.Client, s styles.Styles, k keys.KeyMap, defaultBranch, localBranch string) Dashboard {
+func NewDashboard(cfg *config.Config, client gh.Client, cache *RunsCache, s styles.Styles, k keys.KeyMap, defaultBranch, localBranch string) Dashboard {
 	return Dashboard{
 		born:           time.Now(),
 		config:         cfg,
 		client:         client,
+		runsCache:      cache,
 		styles:         s,
 		keys:           k,
-		branchPicker:   NewBranchPicker(),
+		repoPicker:     NewPicker("filter repos..."),
+		branchPicker:   NewPicker("filter branches..."),
 		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
 		workflowFiles:  make(map[string]string),
 		defaultBranch:  defaultBranch,
 		localBranch:    localBranch,
+		localRepo:      strings.Join(cfg.Repos, ", "),
 	}
 }
 
@@ -92,7 +100,7 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 	}
 	prevWf := d.selectedWorkflow()
 
-	d.workflows, d.availableBranches = deriveLists(d.localDefs, d.allRuns)
+	d.workflows, d.availableBranches = listsFromRuns(d.localDefs, d.allRuns)
 
 	// ensure both the configured primary branch and the local checkout are
 	// always present, even when they have no runs yet
@@ -152,6 +160,9 @@ func (d *Dashboard) SetJobs(jobs []types.Job) {
 
 // Update handles a key event and returns the updated dashboard and command.
 func (d Dashboard) Update(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
+	if d.repoPicker.Active() {
+		return d.handleRepoSelect(msg)
+	}
 	if d.branchPicker.Active() {
 		return d.handleBranchSelect(msg)
 	}
@@ -164,9 +175,54 @@ func (d Dashboard) Update(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	return d.handleMainKeys(msg)
 }
 
+func (d Dashboard) repoPickerNames() []string {
+	names := make([]string, 0, len(d.nearbyRepos)+1)
+	names = append(names, ".")
+	for _, r := range d.nearbyRepos {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
+func (d Dashboard) handleRepoSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
+	var cmd tea.Cmd
+	var result *PickResult
+	d.repoPicker, cmd, result = d.repoPicker.Update(msg)
+	if result != nil {
+		chosen := result.Chosen
+		branch := ""
+		if chosen == "." {
+			chosen = d.localRepo
+			if len(d.nearbyRepos) > 0 {
+				branch = d.nearbyRepos[0].Branch
+			}
+		} else {
+			for _, r := range d.nearbyRepos {
+				if r.Name == chosen {
+					branch = r.Branch
+					break
+				}
+			}
+		}
+		d.config.Repos = []string{chosen}
+		d.allRuns = nil
+		d.filteredRuns = nil
+		d.workflows = nil
+		d.availableBranches = nil
+		d.branchIdx = 0
+		d.localBranch = branch
+		d.jobs = nil
+		d.cursor = 0
+		d.jobCursor = 0
+		d.workflowCursor = 1
+		return d, refreshRuns(d.runsCache, d.client, d.config.Repos)
+	}
+	return d, cmd
+}
+
 func (d Dashboard) handleBranchSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	var cmd tea.Cmd
-	var result *BranchPickResult
+	var result *PickResult
 	d.branchPicker, cmd, result = d.branchPicker.Update(msg)
 	if result != nil {
 		for i, b := range d.availableBranches {
@@ -271,7 +327,7 @@ func (d Dashboard) moveCursor(delta int) (Dashboard, tea.Cmd) {
 	switch d.activePanel {
 	case panelWorkflows:
 		n := d.workflowCursor + delta
-		if n >= 0 && n <= len(d.workflows) {
+		if n >= -1 && n <= len(d.workflows) {
 			d.workflowCursor = n
 			d.applyFilter()
 			d.cursor = 0
@@ -429,7 +485,13 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 		}
 
 	case key.Matches(msg, d.keys.Enter):
-		if d.activePanel == panelWorkflows && d.workflowCursor == 0 {
+		if d.activePanel == panelWorkflows && d.workflowCursor == -1 {
+			if len(d.nearbyRepos) > 0 {
+				cmd := d.repoPicker.Open(d.repoPickerNames())
+				return d, cmd
+			}
+			return d, discoverRepos()
+		} else if d.activePanel == panelWorkflows && d.workflowCursor == 0 {
 			cmd := d.branchPicker.Open(d.availableBranches)
 			return d, cmd
 		} else if d.activePanel < panelDetail {
@@ -492,7 +554,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 
 	case key.Matches(msg, d.keys.Refresh):
 		d.PendingMessage = "refreshing..."
-		return d, loadRuns(d.client, d.config.Repos)
+		return d, refreshRuns(d.runsCache, d.client, d.config.Repos)
 	}
 
 	return d, nil
@@ -591,10 +653,21 @@ func (d Dashboard) renderWorkflows(width, height int) string {
 
 	var rows []string
 
-	// ── REPO section (display only) ──────────────────────────────────────────
+	// ── REPO section ────────────────────────────────────────────────────────
 	rows = append(rows, headerStyle.Render("REPO"))
-	repoDisplay := strings.Join(d.config.Repos, ", ")
-	rows = append(rows, d.styles.Repo.Render(fmt.Sprintf("%-*s", width-2, gh.TruncateString(repoDisplay, width-2))))
+	if d.repoPicker.Active() {
+		for _, row := range d.repoPicker.View(d.styles, width) {
+			rows = append(rows, row)
+		}
+	} else {
+		repoDisplay := strings.Join(d.config.Repos, ", ")
+		text := fmt.Sprintf("%-*s", width-2, gh.TruncateString(repoDisplay, width-2))
+		if d.workflowCursor == -1 && active {
+			rows = append(rows, selectedStyle.Render(text))
+		} else {
+			rows = append(rows, d.styles.Repo.Render(text))
+		}
+	}
 
 	// Separator
 	rows = append(rows, d.styles.Dimmed.Render(strings.Repeat("─", width-1)))
@@ -936,6 +1009,10 @@ func (d Dashboard) renderHelpBar(width int, message string) string {
 
 	if d.dispatchDialog.Active() {
 		return d.dispatchDialog.HelpView(d.styles)
+	}
+
+	if d.repoPicker.Active() {
+		return d.repoPicker.HelpView(d.styles)
 	}
 
 	if d.branchPicker.Active() {
