@@ -37,8 +37,8 @@ type App struct {
 
 	screen screen
 
-	runs      Fetchable[[]types.WorkflowRun]
-	localDefs Fetchable[[]types.WorkflowDef]
+	runs      *Fetchable[types.RunMap]
+	localDefs *Fetchable[[]types.WorkflowDef]
 
 	workflowFiles map[string]string
 	defaultBranch string
@@ -47,7 +47,6 @@ type App struct {
 	width, height int
 	message       string
 
-	runsCache *RunsCache
 	dashboard Dashboard
 	logViewer LogViewer
 }
@@ -55,33 +54,29 @@ type App struct {
 func NewApp(cfg *config.Config) App {
 	s := styles.DefaultStyles()
 	k := keys.DefaultKeyMap()
-	client := gh.NewClient()
+	runs := &Fetchable[types.RunMap]{Fetching: true}
+	client := gh.NewClient(runs)
 	defaultBranch := cfg.PrimaryBranch
 	localBranch := gitBranch()
-	runsCache := &RunsCache{}
 	return App{
 		config:        cfg,
 		client:        client,
 		styles:        s,
 		keys:          k,
-		runs:          Fetchable[[]types.WorkflowRun]{Fetching: true},
-		localDefs:     Fetchable[[]types.WorkflowDef]{Fetching: true},
+		runs:          runs,
+		localDefs:     &Fetchable[[]types.WorkflowDef]{Fetching: true},
 		workflowFiles: make(map[string]string),
 		defaultBranch: defaultBranch,
 		localBranch:   localBranch,
-		runsCache:     runsCache,
-		dashboard:     NewDashboard(cfg, client, runsCache, s, k, defaultBranch, localBranch),
+		dashboard:     NewDashboard(cfg, client, runs, s, k, defaultBranch, localBranch),
 		logViewer:     NewLogViewer(s, k),
 	}
 }
 
 func (a App) Init() tea.Cmd {
-	if cached, ok := a.runsCache.Get(); ok {
-		a.runs.SetLocal(cached)
-	}
 	return tea.Batch(
 		loadLocalDefs(),
-		refreshRuns(a.runsCache, a.client, a.config.Repos),
+		refreshRuns(a.client, a.config.Repos),
 		tick(a.config.RefreshInterval),
 	)
 }
@@ -162,7 +157,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.runsCache, a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos))
 
 	case dispatchResultMsg:
 		if msg.err != nil {
@@ -170,11 +165,11 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			a.message = msg.message
 		}
-		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.runsCache, a.client, a.config.Repos))
+		cmds = append(cmds, clearMsg(time.Duration(a.config.MsgTimeout)*time.Second), refreshRuns(a.client, a.config.Repos))
 
 	case tickMsg:
 		a.runs.SetFetching()
-		cmds = append(cmds, refreshRuns(a.runsCache, a.client, a.config.Repos), tick(a.config.RefreshInterval))
+		cmds = append(cmds, refreshRuns(a.client, a.config.Repos), tick(a.config.RefreshInterval))
 
 	case backToMainMsg:
 		a.screen = screenDashboard
@@ -205,15 +200,19 @@ func (a App) View() string {
 // deriveWorkflowFiles populates workflowFiles (name → filename) from
 // run paths and local defs.
 func (a *App) deriveWorkflowFiles() {
-	for _, r := range a.runs.Data {
-		if r.Path == "" {
-			continue
+	for _, repoMap := range a.runs.Data {
+		for _, branchRuns := range repoMap {
+			for _, r := range branchRuns {
+				if r.Path == "" {
+					continue
+				}
+				if _, ok := a.workflowFiles[r.Name]; ok {
+					continue
+				}
+				parts := strings.Split(r.Path, "/")
+				a.workflowFiles[r.Name] = parts[len(parts)-1]
+			}
 		}
-		if _, ok := a.workflowFiles[r.Name]; ok {
-			continue
-		}
-		parts := strings.Split(r.Path, "/")
-		a.workflowFiles[r.Name] = parts[len(parts)-1]
 	}
 	for _, def := range a.localDefs.Data {
 		if _, ok := a.workflowFiles[def.Name]; !ok {

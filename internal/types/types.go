@@ -78,6 +78,9 @@ const (
 	RunStatusCompleted  = "completed"
 )
 
+// RunMap stores workflow runs indexed by repo then branch.
+type RunMap = map[string]map[string][]WorkflowRun
+
 // StatusFilter represents the filter options for workflow run status
 type StatusFilter string
 

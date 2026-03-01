@@ -190,6 +190,17 @@ func scanLocalWorkflows() ([]types.WorkflowDef, error) {
 	return defs, nil
 }
 
+// flattenRunMap returns all runs from a RunMap as a single flat slice.
+func flattenRunMap(rm types.RunMap) []types.WorkflowRun {
+	var runs []types.WorkflowRun
+	for _, repoMap := range rm {
+		for _, branchRuns := range repoMap {
+			runs = append(runs, branchRuns...)
+		}
+	}
+	return runs
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a

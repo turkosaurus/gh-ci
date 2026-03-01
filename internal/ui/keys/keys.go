@@ -38,6 +38,14 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("down", "j"),
 			key.WithHelp("↓/j", "down"),
 		),
+		Left: key.NewBinding(
+			key.WithKeys("h", "left"),
+			key.WithHelp("h/←", "left"),
+		),
+		Logs: key.NewBinding( // TODO: this should be named "right" yes?
+			key.WithKeys("l", "right"),
+			key.WithHelp("l/→", "right"),
+		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("enter", "select"),
@@ -54,10 +62,6 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("d"),
 			key.WithHelp("d", "dispatch"),
 		),
-		Logs: key.NewBinding(
-			key.WithKeys("l", "right"),
-			key.WithHelp("l/→", "right"),
-		),
 		Open: key.NewBinding(
 			key.WithKeys("o"),
 			key.WithHelp("o", "open in browser"),
@@ -69,10 +73,6 @@ func DefaultKeyMap() KeyMap {
 		Quit: key.NewBinding(
 			key.WithKeys("q", "ctrl+c"),
 			key.WithHelp("q", "quit"),
-		),
-		Left: key.NewBinding(
-			key.WithKeys("h", "left"),
-			key.WithHelp("h/←", "left"),
 		),
 		Back: key.NewBinding(
 			key.WithKeys("esc"),
@@ -116,4 +116,3 @@ func DefaultKeyMap() KeyMap {
 		),
 	}
 }
-

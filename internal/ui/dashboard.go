@@ -54,10 +54,10 @@ type Dashboard struct {
 
 	config        *config.Config
 	client        gh.Client
-	runsCache     *RunsCache
+	runs          *Fetchable[types.RunMap]
 	styles        styles.Styles
 	keys          keys.KeyMap
-	allRuns       []types.WorkflowRun
+	allRuns       types.RunMap
 	localDefs     []types.WorkflowDef
 	workflowFiles map[string]string
 	defaultBranch string
@@ -66,12 +66,12 @@ type Dashboard struct {
 }
 
 // NewDashboard creates a Dashboard with the given dependencies.
-func NewDashboard(cfg *config.Config, client gh.Client, cache *RunsCache, s styles.Styles, k keys.KeyMap, defaultBranch, localBranch string) Dashboard {
+func NewDashboard(cfg *config.Config, client gh.Client, runs *Fetchable[types.RunMap], s styles.Styles, k keys.KeyMap, defaultBranch, localBranch string) Dashboard {
 	return Dashboard{
 		born:           time.Now(),
 		config:         cfg,
 		client:         client,
-		runsCache:      cache,
+		runs:           runs,
 		styles:         s,
 		keys:           k,
 		repoPicker:     NewPicker("filter repos..."),
@@ -86,7 +86,7 @@ func NewDashboard(cfg *config.Config, client gh.Client, cache *RunsCache, s styl
 
 // SetRuns updates the dashboard with fresh run data and re-derives filters.
 // workflowFiles is passed from App (which populates it from run paths + localDefs).
-func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.WorkflowDef, workflowFiles map[string]string) tea.Cmd {
+func (d *Dashboard) SetRuns(allRuns types.RunMap, localDefs []types.WorkflowDef, workflowFiles map[string]string) tea.Cmd {
 	d.allRuns = allRuns
 	d.localDefs = localDefs
 	d.workflowFiles = workflowFiles
@@ -100,7 +100,7 @@ func (d *Dashboard) SetRuns(allRuns []types.WorkflowRun, localDefs []types.Workf
 	}
 	prevWf := d.selectedWorkflow()
 
-	d.workflows, d.availableBranches = listsFromRuns(d.localDefs, d.allRuns)
+	d.workflows, d.availableBranches = listsFromRuns(d.localDefs, flattenRunMap(d.allRuns))
 
 	// ensure both the configured primary branch and the local checkout are
 	// always present, even when they have no runs yet
@@ -215,7 +215,7 @@ func (d Dashboard) handleRepoSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 		d.cursor = 0
 		d.jobCursor = 0
 		d.workflowCursor = 1
-		return d, refreshRuns(d.runsCache, d.client, d.config.Repos)
+		return d, refreshRuns(d.client, d.config.Repos)
 	}
 	return d, cmd
 }
@@ -277,17 +277,15 @@ func (d Dashboard) selectedBranch() string {
 }
 
 func (d *Dashboard) applyFilter() {
-	// filter by branch
+	// filter by branch: collect runs for the selected branch across all repos
 	var runs []types.WorkflowRun
 	if d.branchIdx < len(d.availableBranches) {
 		branch := d.availableBranches[d.branchIdx]
-		for _, r := range d.allRuns {
-			if r.HeadBranch == branch {
-				runs = append(runs, r)
-			}
+		for _, repoMap := range d.allRuns {
+			runs = append(runs, repoMap[branch]...)
 		}
 	} else {
-		runs = d.allRuns
+		runs = flattenRunMap(d.allRuns)
 	}
 
 	// filter by workflow
@@ -435,7 +433,7 @@ func (d Dashboard) openURL() string {
 			}
 		} else {
 			// specific workflow — open its actions/workflows page
-			for _, r := range d.allRuns {
+			for _, r := range flattenRunMap(d.allRuns) {
 				if r.Name == wfName {
 					if filename, ok := d.workflowFiles[wfName]; ok {
 						return r.Repository.HTMLURL + "/actions/workflows/" + filename
@@ -554,7 +552,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 
 	case key.Matches(msg, d.keys.Refresh):
 		d.PendingMessage = "refreshing..."
-		return d, refreshRuns(d.runsCache, d.client, d.config.Repos)
+		return d, refreshRuns(d.client, d.config.Repos)
 	}
 
 	return d, nil

@@ -35,18 +35,21 @@ func discoverRepos() tea.Cmd {
 	}
 }
 
-func refreshRuns(cache *RunsCache, client gh.Client, repos []string) tea.Cmd {
+func refreshRuns(client gh.Client, repos []string) tea.Cmd {
 	return func() tea.Msg {
-		var all []types.WorkflowRun
+		runMap := make(types.RunMap)
 		for _, repo := range repos {
-			runs, err := client.ListWorkflowRuns(repo, 10)
+			repoRuns, err := client.ListWorkflowRuns(repo, 10)
 			if err != nil {
 				return runsUpdatedMsg{err: err}
 			}
-			all = append(all, runs...)
+			repoMap := make(map[string][]types.WorkflowRun)
+			for _, r := range repoRuns {
+				repoMap[r.HeadBranch] = append(repoMap[r.HeadBranch], r)
+			}
+			runMap[repo] = repoMap
 		}
-		cache.Set(all)
-		return runsUpdatedMsg{runs: all}
+		return runsUpdatedMsg{runs: runMap}
 	}
 }
 

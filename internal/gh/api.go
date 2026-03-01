@@ -11,6 +11,13 @@ import (
 	"github.com/turkosaurus/gh-ci/internal/types"
 )
 
+// RunState is a read-only view of the runs cache that the client can
+// inspect before deciding how to fetch (e.g. skip if data is fresh).
+type RunState interface {
+	FetchedAt() time.Time
+	HasData() bool
+}
+
 // Client is the interface for GitHub API operations.
 type Client interface {
 	ListWorkflowRuns(repo string, pageMax int) ([]types.WorkflowRun, error)
@@ -24,11 +31,15 @@ type Client interface {
 }
 
 // ghClient is the concrete gh-CLI-backed implementation of Client.
-type ghClient struct{}
+type ghClient struct {
+	state RunState
+}
 
 // NewClient creates a new GitHub API client backed by the gh CLI.
-func NewClient() Client {
-	return &ghClient{}
+// state gives the client a read-only view of cached run data so it can
+// optimize future requests (e.g. check freshness before fetching).
+func NewClient(state RunState) Client {
+	return &ghClient{state: state}
 }
 
 // ListWorkflowRuns fetches workflow runs for a repository

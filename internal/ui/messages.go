@@ -9,7 +9,7 @@ import (
 
 type (
 	runsUpdatedMsg struct {
-		runs []types.WorkflowRun
+		runs types.RunMap
 		err  error
 	}
 	jobsLoadedMsg struct {
