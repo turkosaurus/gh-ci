@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -219,14 +218,4 @@ func (a *App) deriveWorkflowFiles() {
 			a.workflowFiles[def.Name] = def.File
 		}
 	}
-}
-
-// bindingHelp renders a single key binding as a "key  desc" help item.
-func bindingHelp(s styles.Styles, b key.Binding) string {
-	return s.HelpKey.Render(b.Help().Key) + " " + s.HelpDesc.Render(b.Help().Desc)
-}
-
-func renderTitle(width int) string {
-	title := fmt.Sprintf("ci (%s)", Version)
-	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
 }

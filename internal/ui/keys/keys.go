@@ -10,7 +10,7 @@ type KeyMap struct {
 	Rerun        key.Binding
 	Cancel       key.Binding
 	Dispatch     key.Binding
-	Logs         key.Binding
+	Right        key.Binding
 	Open         key.Binding
 	Refresh      key.Binding
 	Quit         key.Binding
@@ -42,7 +42,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("h", "left"),
 			key.WithHelp("h/←", "left"),
 		),
-		Logs: key.NewBinding( // TODO: this should be named "right" yes?
+		Right: key.NewBinding(
 			key.WithKeys("l", "right"),
 			key.WithHelp("l/→", "right"),
 		),

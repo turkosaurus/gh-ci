@@ -9,9 +9,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/lipgloss"
 	"gopkg.in/yaml.v3"
 
 	"github.com/turkosaurus/gh-ci/internal/types"
+	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
 
 const (
@@ -213,4 +216,14 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// bindingHelp renders a single key binding as a "key  desc" help item.
+func bindingHelp(s styles.Styles, b key.Binding) string {
+	return s.HelpKey.Render(b.Help().Key) + " " + s.HelpDesc.Render(b.Help().Desc)
+}
+
+func renderTitle(width int) string {
+	title := fmt.Sprintf("ci (%s)", Version)
+	return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
 }

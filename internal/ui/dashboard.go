@@ -14,6 +14,7 @@ import (
 	"github.com/turkosaurus/gh-ci/internal/gh"
 	"github.com/turkosaurus/gh-ci/internal/types"
 	"github.com/turkosaurus/gh-ci/internal/ui/keys"
+	"github.com/turkosaurus/gh-ci/internal/ui/picker"
 	"github.com/turkosaurus/gh-ci/internal/ui/styles"
 )
 
@@ -43,8 +44,8 @@ type Dashboard struct {
 	branchIdx         int
 	jobs              []types.Job
 
-	repoPicker     Picker
-	branchPicker   Picker
+	repoPicker     picker.Picker
+	branchPicker   picker.Picker
 	confirmDialog  ConfirmDialog
 	dispatchDialog DispatchDialog
 
@@ -74,8 +75,8 @@ func NewDashboard(cfg *config.Config, client gh.Client, runs *Fetchable[types.Ru
 		runs:           runs,
 		styles:         s,
 		keys:           k,
-		repoPicker:     NewPicker("filter repos..."),
-		branchPicker:   NewPicker("filter branches..."),
+		repoPicker:     picker.NewPicker("filter repos..."),
+		branchPicker:   picker.NewPicker("filter branches..."),
 		workflowCursor: 1, // start on workflowAll (0=branch, 1=workflows[0])
 		workflowFiles:  make(map[string]string),
 		defaultBranch:  defaultBranch,
@@ -186,7 +187,7 @@ func (d Dashboard) repoPickerNames() []string {
 
 func (d Dashboard) handleRepoSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	var cmd tea.Cmd
-	var result *PickResult
+	var result *picker.PickResult
 	d.repoPicker, cmd, result = d.repoPicker.Update(msg)
 	if result != nil {
 		chosen := result.Chosen
@@ -222,7 +223,7 @@ func (d Dashboard) handleRepoSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 
 func (d Dashboard) handleBranchSelect(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	var cmd tea.Cmd
-	var result *PickResult
+	var result *picker.PickResult
 	d.branchPicker, cmd, result = d.branchPicker.Update(msg)
 	if result != nil {
 		for i, b := range d.availableBranches {
@@ -259,7 +260,7 @@ func (d Dashboard) handleDispatchConfirm(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 }
 
 func (d Dashboard) filteredBranches() []string {
-	q := strings.ToLower(d.branchPicker.input.Value())
+	q := strings.ToLower(d.branchPicker.Query())
 	var out []string
 	for _, b := range d.availableBranches {
 		if q == "" || strings.Contains(strings.ToLower(b), q) {
@@ -477,7 +478,7 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	case key.Matches(msg, d.keys.Bottom):
 		return d.moveCursorEdge(false)
 
-	case key.Matches(msg, d.keys.Logs): // l — move right between panels
+	case key.Matches(msg, d.keys.Right): // l — move right between panels
 		if d.activePanel < panelDetail {
 			d.activePanel++
 		}
