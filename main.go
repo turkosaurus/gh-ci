@@ -44,7 +44,7 @@ func main() {
 	)
 
 	app := ui.NewApp(cfg)
-	p := tea.NewProgram(app, tea.WithAltScreen())
+	p := tea.NewProgram(app, tea.WithAltScreen(), tea.WithMouseCellMotion())
 
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "fatal: run: %v\n", err)

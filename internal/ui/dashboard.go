@@ -579,6 +579,120 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 	return d, nil
 }
 
+// ── Mouse handling ──────────────────────────────────────────────────────────
+
+// handleMouse processes a left-click at the given terminal coordinates.
+func (d Dashboard) handleMouse(x, y, w, h int) (Dashboard, tea.Cmd) {
+	if d.helpModal.Active() || d.repoPicker.Active() || d.branchPicker.Active() ||
+		d.confirmDialog.Active() || d.dispatchDialog.Active() {
+		return d, nil
+	}
+
+	bodyTop := 4     // 3-line title + 1 panel header row
+	bodyBot := h - 1 // help bar
+	if y < bodyTop || y >= bodyBot {
+		return d, nil
+	}
+	bodyY := y - bodyTop
+	bodyH := bodyBot - bodyTop
+
+	lay := computeDashLayout(w)
+
+	if x < lay.workflowW {
+		d.activePanel = panelWorkflows
+		return d.handleWorkflowClick(bodyY, bodyH)
+	}
+	if x < lay.workflowW+1+lay.runsW {
+		d.activePanel = panelRuns
+		return d.handleRunClick(bodyY, bodyH)
+	}
+	d.activePanel = panelDetail
+	return d.handleDetailClick(bodyY)
+}
+
+func (d Dashboard) handleWorkflowClick(bodyY, bodyH int) (Dashboard, tea.Cmd) {
+	// Row layout: 0=REPO hdr, 1=repo, 2=sep, 3=BRANCH hdr, 4=branch, 5=sep, 6=NAME hdr, 7+=items
+	switch {
+	case bodyY == 1:
+		d.workflowCursor = -1
+		d.applyFilter()
+		d.cursor = 0
+	case bodyY == 4:
+		d.workflowCursor = 0
+		d.applyFilter()
+		d.cursor = 0
+	case bodyY >= 7 && len(d.workflows) > 0:
+		// Compute scroll offset (mirrors renderWorkflows)
+		filenameShown := false
+		if wfName := d.selectedWorkflow(); wfName != "" && wfName != workflowAll {
+			if _, ok := d.workflowFiles[wfName]; ok {
+				filenameShown = true
+			}
+		}
+		workflowListH := bodyH - 7
+		if filenameShown {
+			workflowListH--
+		}
+		if workflowListH < 1 {
+			workflowListH = 1
+		}
+		wfCursor := 0
+		if d.workflowCursor > 0 {
+			wfCursor = d.workflowCursor - 1
+		}
+		startIdx := 0
+		if wfCursor >= workflowListH {
+			startIdx = wfCursor - workflowListH + 1
+		}
+		clickedIdx := startIdx + (bodyY - 7)
+		if clickedIdx >= 0 && clickedIdx < len(d.workflows) {
+			d.workflowCursor = clickedIdx + 1
+			d.applyFilter()
+			d.cursor = 0
+			d.jobs = nil
+			d.jobCursor = 0
+			if run := d.selectedRun(); run != nil {
+				return d, loadJobs(d.client, run.Repository.FullName, run.ID)
+			}
+		}
+	}
+	return d, nil
+}
+
+func (d Dashboard) handleRunClick(bodyY, bodyH int) (Dashboard, tea.Cmd) {
+	// Row 0: column header, Row 1+: run items
+	if bodyY < 1 || len(d.filteredRuns) == 0 {
+		return d, nil
+	}
+	listH := bodyH - 2
+	startIdx := 0
+	if d.cursor >= listH {
+		startIdx = d.cursor - listH + 1
+	}
+	clickedIdx := startIdx + (bodyY - 1)
+	if clickedIdx >= 0 && clickedIdx < len(d.filteredRuns) {
+		d.cursor = clickedIdx
+		d.jobs = nil
+		d.jobCursor = 0
+		if run := d.selectedRun(); run != nil {
+			return d, loadJobs(d.client, run.Repository.FullName, run.ID)
+		}
+	}
+	return d, nil
+}
+
+func (d Dashboard) handleDetailClick(bodyY int) (Dashboard, tea.Cmd) {
+	// Rows 0-7: header fields, Row 8+: job items
+	if bodyY < 8 || len(d.jobs) == 0 {
+		return d, nil
+	}
+	clickedIdx := bodyY - 8
+	if clickedIdx >= 0 && clickedIdx < len(d.jobs) {
+		d.jobCursor = clickedIdx
+	}
+	return d, nil
+}
+
 // ── Render methods ──────────────────────────────────────────────────────────
 
 // View renders the complete dashboard (title + panels + help bar).
@@ -597,24 +711,11 @@ func (d Dashboard) View(width, height int, message Message, loading bool) string
 		bodyH = 5
 	}
 
-	workflowW := 22
-	maxDetailW := 40
-	detailW := min(maxDetailW, w*30/100)
-	runsW := w - workflowW - detailW - 2 // 2 separators
-
-	// Shrink panels proportionally if terminal is too narrow
-	if runsW < 20 {
-		// Reduce detail first, then workflow panel
-		detailW = max(8, w*20/100)
-		workflowW = max(12, w*25/100)
-		runsW = w - workflowW - detailW - 2
-		if runsW < 1 {
-			runsW = 1
-		}
-	}
+	lay := computeDashLayout(w)
+	workflowW, runsW, detailW := lay.workflowW, lay.runsW, lay.detailW
 
 	sep := lipgloss.NewStyle().
-		Foreground(styles.ColorSubtle).
+		Foreground(d.styles.P.Subtle).
 		Render(strings.Repeat("│\n", bodyH-1) + "│")
 
 	body := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -626,7 +727,7 @@ func (d Dashboard) View(width, height int, message Message, loading bool) string
 	)
 
 	base := lipgloss.JoinVertical(lipgloss.Left,
-		renderTitle(w),
+		renderTitle(w, d.styles.P),
 		d.renderPanelHeaders(workflowW, runsW, detailW),
 		body,
 		d.renderHelpBar(w, message),
@@ -639,16 +740,16 @@ func (d Dashboard) View(width, height int, message Message, loading bool) string
 }
 
 func (d Dashboard) renderPanelHeaders(workflowW, runsW, detailW int) string {
-	sep := lipgloss.NewStyle().Background(styles.ColorBgLight).Foreground(styles.ColorSubtle).Render("│")
+	sep := lipgloss.NewStyle().Background(d.styles.P.BgLight).Foreground(d.styles.P.Subtle).Render("│")
 	label := func(panel int, text string, w int) string {
 		style := lipgloss.NewStyle().
 			Width(w).
 			Align(lipgloss.Center) // Center the label text
 		if d.activePanel == panel {
 			style = style.Bold(true).
-				Background(styles.ColorPurple).Foreground(styles.ColorBg)
+				Background(d.styles.P.Accent).Foreground(d.styles.P.Bg)
 		} else {
-			style = style.Background(styles.ColorBgLight).Foreground(styles.ColorWhite)
+			style = style.Background(d.styles.P.BgLight).Foreground(d.styles.P.Fg)
 		}
 		return style.Render(text)
 	}
@@ -669,11 +770,11 @@ func (d Dashboard) renderPanelHeaders(workflowW, runsW, detailW int) string {
 func (d Dashboard) renderWorkflows(width, height int) string {
 	active := d.activePanel == panelWorkflows
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorGray)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.FgDim)
 	if active {
-		headerStyle = headerStyle.Foreground(styles.ColorPurple)
+		headerStyle = headerStyle.Foreground(d.styles.P.Accent)
 	}
-	selectedStyle := lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite)
+	selectedStyle := lipgloss.NewStyle().Bold(true).Background(d.styles.P.BgLight).Foreground(d.styles.P.Fg)
 
 	var rows []string
 
@@ -764,7 +865,7 @@ func (d Dashboard) renderWorkflows(width, height int) string {
 		case selected && active:
 			row = selectedStyle.Render(text)
 		case selected:
-			row = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(text)
+			row = lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.Accent).Render(text)
 		default:
 			row = d.styles.Normal.Render(text)
 		}
@@ -826,9 +927,9 @@ func (d Dashboard) renderList(width, height int, loading bool) string {
 		colWorkflow = 4
 	}
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorGray)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.FgDim)
 	if active {
-		headerStyle = headerStyle.Foreground(styles.ColorPurple)
+		headerStyle = headerStyle.Foreground(d.styles.P.Accent)
 	}
 
 	var headerParts []string
@@ -896,10 +997,10 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 	}
 	cols = append(cols,
 		col{plain: wfS, styled: func(bg lipgloss.Style) string {
-			return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorWhite).Background(bg.GetBackground()).Render(wfS)
+			return lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.Fg).Background(bg.GetBackground()).Render(wfS)
 		}},
 		col{plain: numS, styled: func(bg lipgloss.Style) string {
-			return lipgloss.NewStyle().Foreground(styles.ColorWhite).Background(bg.GetBackground()).Render(numS)
+			return lipgloss.NewStyle().Foreground(d.styles.P.Fg).Background(bg.GetBackground()).Render(numS)
 		}},
 		col{plain: durS, styled: func(bg lipgloss.Style) string {
 			return d.styles.Duration.Background(bg.GetBackground()).Render(durS)
@@ -910,7 +1011,7 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 	)
 
 	if selected && active {
-		bg := lipgloss.NewStyle().Background(styles.ColorBgLight)
+		bg := lipgloss.NewStyle().Background(d.styles.P.BgLight)
 		sep := bg.Render("  ")
 		var parts []string
 		for _, c := range cols {
@@ -939,7 +1040,7 @@ func (d Dashboard) renderRunRow(run types.WorkflowRun, selected, active bool, wi
 			parts = append(parts, c.plain)
 		}
 		plainRow := strings.Join(parts, "  ")
-		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(plainRow)
+		return lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.Accent).Render(plainRow)
 	}
 
 	// normal: per-element styles
@@ -968,9 +1069,9 @@ func (d Dashboard) renderDetail(width int) string {
 
 	var sb strings.Builder
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(styles.ColorGray)
+	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.FgDim)
 	if active {
-		headerStyle = headerStyle.Foreground(styles.ColorPurple)
+		headerStyle = headerStyle.Foreground(d.styles.P.Accent)
 	}
 	sb.WriteString(headerStyle.Render(fmt.Sprintf("[#%d] %s", run.RunNumber, gh.TruncateString(run.Name, width-10))))
 	sb.WriteString("\n\n")
@@ -997,7 +1098,7 @@ func (d Dashboard) renderDetail(width int) string {
 
 	jobsHeaderStyle := d.styles.Dimmed
 	if active {
-		jobsHeaderStyle = lipgloss.NewStyle().Foreground(styles.ColorPurple)
+		jobsHeaderStyle = lipgloss.NewStyle().Foreground(d.styles.P.Accent)
 	}
 	sb.WriteString(jobsHeaderStyle.Render("jobs") + "\n")
 
@@ -1010,10 +1111,10 @@ func (d Dashboard) renderDetail(width int) string {
 			var line string
 			switch {
 			case i == d.jobCursor && active:
-				line = lipgloss.NewStyle().Bold(true).Background(styles.ColorBgLight).Foreground(styles.ColorWhite).
+				line = lipgloss.NewStyle().Bold(true).Background(d.styles.P.BgLight).Foreground(d.styles.P.Fg).
 					Render(fmt.Sprintf("  %s %s", jIcon, name))
 			case i == d.jobCursor:
-				line = lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+				line = lipgloss.NewStyle().Bold(true).Foreground(d.styles.P.Accent).
 					Render(fmt.Sprintf("  %s %s", jIcon, name))
 			default:
 				jStyle := d.styles.StatusStyle(job.Status, job.Conclusion)
@@ -1063,6 +1164,9 @@ func (d Dashboard) renderHelpBar(width int, message Message) string {
 		}
 	}
 	items = append(items, bindingHelp(d.styles, d.keys.Open))
+	if d.activePanel == panelDetail && d.jobCursor < len(d.jobs) {
+		items = append(items, d.styles.HelpKey.Render("↵")+" "+d.styles.HelpDesc.Render("view logs"))
+	}
 
 	left := strings.Join(items, "  ")
 	right := bindingHelp(d.styles, d.keys.Quit) + "  " + bindingHelp(d.styles, d.keys.Help)

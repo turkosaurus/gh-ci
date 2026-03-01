@@ -11,160 +11,150 @@ const (
 	MessageTypeError
 )
 
-// Colors
-var (
-	ColorRed     = lipgloss.Color("#FF5555")
-	ColorGreen   = lipgloss.Color("#50FA7B")
-	ColorYellow  = lipgloss.Color("#F1FA8C")
-	ColorBlue    = lipgloss.Color("#8BE9FD")
-	ColorPurple  = lipgloss.Color("#BD93F9")
-	ColorCyan    = lipgloss.Color("#8BE9FD")
-	ColorOrange  = lipgloss.Color("#FFB86C")
-	ColorPink    = lipgloss.Color("#FF79C6")
-	ColorGray    = lipgloss.Color("#6272A4")
-	ColorWhite   = lipgloss.Color("#F8F8F2")
-	ColorSubtle  = lipgloss.Color("#44475A")
-	ColorBg      = lipgloss.Color("#282A36")
-	ColorBgLight = lipgloss.Color("#44475A")
-)
-
 // Styles contains all the lipgloss styles for the UI
 type Styles struct {
-	App           lipgloss.Style
-	Title         lipgloss.Style
-	Subtitle      lipgloss.Style
-	StatusSuccess lipgloss.Style
-	StatusFailure lipgloss.Style
-	StatusPending lipgloss.Style
-	StatusRunning lipgloss.Style
-	Selected      lipgloss.Style
-	Normal        lipgloss.Style
-	Dimmed        lipgloss.Style
-	Help          lipgloss.Style
-	HelpKey       lipgloss.Style
-	HelpDesc      lipgloss.Style
-	Error         lipgloss.Style
-	Branch        lipgloss.Style
-	Repo          lipgloss.Style
-	Duration      lipgloss.Style
-	LogLine       lipgloss.Style
-	LogLineNumber lipgloss.Style
-	FilterActive  lipgloss.Style
-	Header        lipgloss.Style
-	Border        lipgloss.Style
-	MessageInfo   lipgloss.Style
+	P              Palette        // embedded palette for ad-hoc color access
+	App            lipgloss.Style
+	Title          lipgloss.Style
+	Subtitle       lipgloss.Style
+	StatusSuccess  lipgloss.Style
+	StatusFailure  lipgloss.Style
+	StatusPending  lipgloss.Style
+	StatusRunning  lipgloss.Style
+	Selected       lipgloss.Style
+	Normal         lipgloss.Style
+	Dimmed         lipgloss.Style
+	Help           lipgloss.Style
+	HelpKey        lipgloss.Style
+	HelpDesc       lipgloss.Style
+	Error          lipgloss.Style
+	Branch         lipgloss.Style
+	Repo           lipgloss.Style
+	Duration       lipgloss.Style
+	LogLine        lipgloss.Style
+	LogLineNumber  lipgloss.Style
+	FilterActive   lipgloss.Style
+	Header         lipgloss.Style
+	Border         lipgloss.Style
+	MessageInfo    lipgloss.Style
 	MessageSuccess lipgloss.Style
-	MessageError  lipgloss.Style
-	DialogPrompt  lipgloss.Style
+	MessageError   lipgloss.Style
+	DialogPrompt   lipgloss.Style
 }
 
-// DefaultStyles returns the default styles for the UI
-func DefaultStyles() Styles {
+// NewStyles creates a Styles instance from a Palette
+func NewStyles(p Palette) Styles {
 	return Styles{
+		P: p,
 		App: lipgloss.NewStyle().
 			Padding(1, 2),
 
 		Title: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ColorPurple).
+			Foreground(p.Accent).
 			MarginBottom(1),
 
 		Subtitle: lipgloss.NewStyle().
-			Foreground(ColorGray),
+			Foreground(p.FgDim),
 
 		StatusSuccess: lipgloss.NewStyle().
-			Foreground(ColorGreen),
+			Foreground(p.Success),
 
 		StatusFailure: lipgloss.NewStyle().
-			Foreground(ColorRed),
+			Foreground(p.Failure),
 
 		StatusPending: lipgloss.NewStyle().
-			Foreground(ColorGray),
+			Foreground(p.FgDim),
 
 		StatusRunning: lipgloss.NewStyle().
-			Foreground(ColorYellow),
+			Foreground(p.Running),
 
 		Selected: lipgloss.NewStyle().
 			Bold(true).
-			Background(ColorBgLight).
-			Foreground(ColorWhite),
+			Background(p.BgLight).
+			Foreground(p.Fg),
 
 		Normal: lipgloss.NewStyle().
-			Foreground(ColorWhite),
+			Foreground(p.Fg),
 
 		Dimmed: lipgloss.NewStyle().
-			Foreground(ColorGray),
+			Foreground(p.FgDim),
 
 		Help: lipgloss.NewStyle().
-			Foreground(ColorGray).
+			Foreground(p.FgDim).
 			MarginTop(1),
 
 		HelpKey: lipgloss.NewStyle().
-			Foreground(ColorCyan).
+			Foreground(p.Key).
 			Bold(true),
 
 		HelpDesc: lipgloss.NewStyle().
-			Foreground(ColorGray),
+			Foreground(p.FgDim),
 
 		Error: lipgloss.NewStyle().
-			Foreground(ColorRed).
+			Foreground(p.Failure).
 			Bold(true),
 
 		Branch: lipgloss.NewStyle().
-			Foreground(ColorPink),
+			Foreground(p.Branch),
 
 		Repo: lipgloss.NewStyle().
-			Foreground(ColorBlue),
+			Foreground(p.Repo),
 
 		Duration: lipgloss.NewStyle().
-			Foreground(ColorOrange),
+			Foreground(p.Duration),
 
 		LogLine: lipgloss.NewStyle().
-			Foreground(ColorWhite),
+			Foreground(p.Fg),
 
 		LogLineNumber: lipgloss.NewStyle().
-			Foreground(ColorGray).
+			Foreground(p.FgDim).
 			Width(6).
 			Align(lipgloss.Right),
 
 		FilterActive: lipgloss.NewStyle().
-			Background(ColorPurple).
-			Foreground(ColorWhite).
+			Background(p.Accent).
+			Foreground(p.Fg).
 			Padding(0, 1),
 
 		Header: lipgloss.NewStyle().
 			Bold(true).
-			Foreground(ColorPurple).
+			Foreground(p.Accent).
 			BorderBottom(true).
 			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(ColorSubtle).
+			BorderForeground(p.Subtle).
 			MarginBottom(1),
 
 		Border: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(ColorSubtle),
+			BorderForeground(p.Subtle),
 
 		MessageInfo: lipgloss.NewStyle().
-			Background(ColorPurple).
-			Foreground(ColorBg).
+			Background(p.Accent).
+			Foreground(p.Bg).
 			Padding(0, 1),
 
 		MessageSuccess: lipgloss.NewStyle().
-			Background(ColorGreen).
-			Foreground(ColorBg).
+			Background(p.Success).
+			Foreground(p.Bg).
 			Padding(0, 1),
 
 		MessageError: lipgloss.NewStyle().
-			Background(ColorRed).
-			Foreground(ColorBg).
+			Background(p.Failure).
+			Foreground(p.Bg).
 			Padding(0, 1),
 
 		DialogPrompt: lipgloss.NewStyle().
 			Bold(true).
-			Background(ColorPurple).
-			Foreground(ColorBg).
+			Background(p.Accent).
+			Foreground(p.Bg).
 			Padding(0, 1),
 	}
+}
+
+// DefaultStyles returns the default styles for the UI (Dracula theme)
+func DefaultStyles() Styles {
+	return NewStyles(ThemeByName("dracula").Palette)
 }
 
 // StatusIcon returns the appropriate icon for a workflow status

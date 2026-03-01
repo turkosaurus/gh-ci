@@ -98,7 +98,7 @@ func (p Picker) filtered() []string {
 func (p Picker) View(s styles.Styles, width int) []string {
 	const maxSugg = 4
 	selectedStyle := lipgloss.NewStyle().Bold(true).
-		Background(styles.ColorBgLight).Foreground(styles.ColorWhite)
+		Background(s.P.BgLight).Foreground(s.P.Fg)
 
 	var rows []string
 	rows = append(rows, p.input.View())

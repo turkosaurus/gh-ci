@@ -78,7 +78,7 @@ type App struct {
 }
 
 func NewApp(cfg *config.Config) App {
-	s := styles.DefaultStyles()
+	s := styles.NewStyles(styles.ThemeByName(cfg.Theme).Palette)
 	k := keys.DefaultKeyMap()
 	runs := &Fetchable[types.RunMap]{Fetching: true}
 	client := gh.NewClient(runs)
@@ -114,6 +114,13 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
+
+	case tea.MouseMsg:
+		if a.screen == screenDashboard && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+			var cmd tea.Cmd
+			a.dashboard, cmd = a.dashboard.handleMouse(msg.X, msg.Y, a.width, a.height)
+			return a, cmd
+		}
 
 	case tea.KeyMsg:
 		switch a.screen {

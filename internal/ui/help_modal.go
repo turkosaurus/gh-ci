@@ -64,12 +64,12 @@ func (h HelpModal) View(k keys.KeyMap, s styles.Styles, width, height int, isDas
 		Render(content)
 
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, box,
-		lipgloss.WithWhitespaceBackground(styles.ColorBg))
+		lipgloss.WithWhitespaceBackground(s.P.Bg))
 }
 
 func (h HelpModal) dashboardBindings(k keys.KeyMap, s styles.Styles, width, height int) string {
 	sectionHeader := func(title string) string {
-		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
+		return lipgloss.NewStyle().Bold(true).Foreground(s.P.Accent).Render(title)
 	}
 
 	binding := func(key, desc string) string {
@@ -138,7 +138,7 @@ func (h HelpModal) dashboardBindings(k keys.KeyMap, s styles.Styles, width, heig
 
 func (h HelpModal) logviewerBindings(k keys.KeyMap, s styles.Styles, width, height int) string {
 	sectionHeader := func(title string) string {
-		return lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).Render(title)
+		return lipgloss.NewStyle().Bold(true).Foreground(s.P.Accent).Render(title)
 	}
 
 	binding := func(key, desc string) string {

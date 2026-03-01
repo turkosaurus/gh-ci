@@ -242,6 +242,27 @@ func mergeRunMap(base types.RunMap, updates []types.WorkflowRun) types.RunMap {
 	return result
 }
 
+// dashLayout holds the computed column widths for the three dashboard panels.
+type dashLayout struct{ workflowW, runsW, detailW int }
+
+// computeDashLayout derives panel widths from the total terminal width.
+func computeDashLayout(w int) dashLayout {
+	workflowW := 22
+	maxDetailW := 40
+	detailW := min(maxDetailW, w*30/100)
+	runsW := w - workflowW - detailW - 2 // 2 separators
+
+	if runsW < 20 {
+		detailW = max(8, w*20/100)
+		workflowW = max(12, w*25/100)
+		runsW = w - workflowW - detailW - 2
+		if runsW < 1 {
+			runsW = 1
+		}
+	}
+	return dashLayout{workflowW: workflowW, runsW: runsW, detailW: detailW}
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a
@@ -261,7 +282,7 @@ func bindingHelp(s styles.Styles, b key.Binding) string {
 	return s.HelpKey.Render(b.Help().Key) + " " + s.HelpDesc.Render(b.Help().Desc)
 }
 
-func renderTitle(width int) string {
+func renderTitle(width int, p styles.Palette) string {
 	// https://patorjk.com/software/taag/
 	blockLines := []string{
 		// "⡎⠑ ⡇",
@@ -274,10 +295,10 @@ func renderTitle(width int) string {
 
 	titleStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(styles.ColorPurple)
+		Foreground(p.Accent)
 
 	versionStyle := lipgloss.NewStyle().
-		Foreground(styles.ColorCyan)
+		Foreground(p.Key)
 
 	// Render box with version on middle row
 	for i, line := range blockLines {

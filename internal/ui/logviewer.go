@@ -216,7 +216,7 @@ func (lv LogViewer) View(width, height int) string {
 		if hGap < 1 {
 			hGap = 1
 		}
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lv.styles.P.Accent).
 			Render("Logs: "+lv.jobName) + "  " + lv.styles.Dimmed.Render(matchInfo) +
 			strings.Repeat(" ", hGap) + lv.styles.Dimmed.Render(scrollInfo))
 		sb.WriteString("\n\n")
@@ -231,7 +231,7 @@ func (lv LogViewer) View(width, height int) string {
 			numStr := lv.styles.LogLineNumber.Render(fmt.Sprintf("%5d ", cl.lineNo))
 			if cl.isMatch {
 				sb.WriteString(numStr)
-				sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorYellow).Render(text))
+				sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lv.styles.P.Running).Render(text))
 			} else {
 				sb.WriteString(numStr)
 				sb.WriteString(lv.styles.Dimmed.Render(text))
@@ -240,7 +240,7 @@ func (lv LogViewer) View(width, height int) string {
 		}
 	} else if lv.logQuery != "" {
 		// query active but no matches
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lv.styles.P.Accent).
 			Render("Logs: " + lv.jobName))
 		sb.WriteString("\n\n")
 		sb.WriteString(lv.styles.Dimmed.Render(fmt.Sprintf("no matches for /%s", lv.logQuery)))
@@ -288,7 +288,7 @@ func (lv LogViewer) View(width, height int) string {
 		if hGap < 1 {
 			hGap = 1
 		}
-		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(styles.ColorPurple).
+		sb.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lv.styles.P.Accent).
 			Render(header + strings.Repeat(" ", hGap) + scrollInfo))
 		sb.WriteString("\n\n")
 
