@@ -85,6 +85,11 @@ func logPath() string {
 	return logPath
 }
 
+// Path returns the path to the config file.
+func Path() string {
+	return configPath()
+}
+
 // configPath returns the path to the config file
 func configPath() string {
 	home, err := os.UserHomeDir()
