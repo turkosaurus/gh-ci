@@ -9,6 +9,7 @@ type KeyMap struct {
 	Enter        key.Binding
 	Rerun        key.Binding
 	Cancel       key.Binding
+	Config       key.Binding
 	Dispatch     key.Binding
 	Edit         key.Binding
 	Right        key.Binding
@@ -58,8 +59,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("r", "re-run"),
 		),
 		Cancel: key.NewBinding(
+			key.WithKeys("X"),
+			key.WithHelp("X", "cancel"),
+		),
+		Config: key.NewBinding(
 			key.WithKeys("c"),
-			key.WithHelp("c", "cancel"),
+			key.WithHelp("c", "config"),
 		),
 		Dispatch: key.NewBinding(
 			key.WithKeys("d"),
