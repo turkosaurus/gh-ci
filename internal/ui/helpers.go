@@ -19,8 +19,15 @@ import (
 
 const (
 	workflowAll     = "*" // "show all workflows"
+	branchAll       = "*" // "show all branches"
 	logViewOverhead = 4   // number of rows consumed by header, spacing, and help bar in the log view.
 )
+
+// isTagBranch reports whether a HeadBranch value is a version tag
+// (starts with 'v' + digit, e.g. "v1.0.0", "v2", "v1.2.3-rc1").
+func isTagBranch(s string) bool {
+	return len(s) > 1 && s[0] == 'v' && s[1] >= '0' && s[1] <= '9'
+}
 
 var workflowDirGitHub = filepath.Join(".github", "workflows")
 
@@ -102,8 +109,11 @@ func listsFromRuns(localDefs []types.WorkflowDef, runs []types.WorkflowRun) ([]s
 		workflowList = append(workflowList, def.Name)
 		filesAdded[def.File] = true
 	}
-	var branchList []string
+	branchList := []string{branchAll}
 	for _, run := range runs {
+		if isTagBranch(run.HeadBranch) {
+			continue
+		}
 		// include all branches with any runs ever
 		if !slices.Contains(branchList, run.HeadBranch) {
 			branchList = append(branchList, run.HeadBranch)

@@ -140,8 +140,23 @@ func (d *Dashboard) applyFilter() {
 	var runs []types.WorkflowRun
 	if d.branchIdx < len(d.availableBranches) {
 		branch := d.availableBranches[d.branchIdx]
-		for _, repoMap := range d.allRuns {
-			runs = append(runs, repoMap[branch]...)
+		switch branch {
+		case branchAll:
+			runs = flattenRunMap(d.allRuns)
+		default:
+			for _, repoMap := range d.allRuns {
+				runs = append(runs, repoMap[branch]...)
+				if branch == d.defaultBranch {
+					for tagBranch, tagRuns := range repoMap {
+						if isTagBranch(tagBranch) {
+							runs = append(runs, tagRuns...)
+						}
+					}
+				}
+			}
+			sort.Slice(runs, func(i, j int) bool {
+				return runs[i].CreatedAt.After(runs[j].CreatedAt)
+			})
 		}
 	} else {
 		runs = flattenRunMap(d.allRuns)
