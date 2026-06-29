@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -144,4 +145,14 @@ func editFile(filePath string) tea.Cmd {
 			return editFileMsg{err: err}
 		},
 	)
+}
+
+func openConfig() tea.Cmd {
+	p := config.Path()
+	if err := config.WriteDefault(); err != nil {
+		return func() tea.Msg {
+			return editFileMsg{err: fmt.Errorf("writing default config: %w", err)}
+		}
+	}
+	return editFile(p)
 }

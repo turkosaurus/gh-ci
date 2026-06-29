@@ -176,6 +176,9 @@ func (d Dashboard) handleMainKeys(msg tea.KeyMsg) (Dashboard, tea.Cmd) {
 			return d, cancelWorkflow(d.client, run.Repository.FullName, run.ID)
 		}
 
+	case key.Matches(msg, d.keys.Config):
+		return d, openConfig()
+
 	case key.Matches(msg, d.keys.Dispatch):
 		if d.activePanel == panelWorkflows {
 			if wfName := d.selectedWorkflow(); wfName != "" && wfName != workflowAll {

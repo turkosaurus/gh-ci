@@ -486,7 +486,9 @@ func (d Dashboard) renderHelpBar(width int, message Message) string {
 	}
 
 	left := strings.Join(items, "  ")
-	right := bindingHelp(d.styles, d.keys.Quit) + "  " + bindingHelp(d.styles, d.keys.Help)
+	right := bindingHelp(d.styles, d.keys.Quit) +
+		"  " + bindingHelp(d.styles, d.keys.Config) +
+		"  " + bindingHelp(d.styles, d.keys.Help)
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 2 {
 		gap = 2

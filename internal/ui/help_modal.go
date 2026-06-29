@@ -90,7 +90,7 @@ func (h HelpModal) dashboardBindings(k keys.KeyMap, s styles.Styles, width, heig
 		"",
 		sectionHeader("ACTIONS"),
 		binding("r", "re-run"),
-		binding("c", "cancel"),
+		binding("X", "cancel"),
 		binding("d", "dispatch"),
 		binding("o", "open in browser"),
 		binding("R", "refresh"),
@@ -100,6 +100,7 @@ func (h HelpModal) dashboardBindings(k keys.KeyMap, s styles.Styles, width, heig
 		sectionHeader("GENERAL"),
 		binding("q", "quit"),
 		binding("esc", "back"),
+		binding("c", "config"),
 		binding("?", "help"),
 	}
 
